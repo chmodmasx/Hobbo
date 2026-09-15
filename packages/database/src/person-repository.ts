@@ -73,6 +73,8 @@ interface InventoryItemRow extends QueryResultRow {
 interface ClaimedScheduledRow extends QueryResultRow {
   due_at: string;
   correlation_id: string;
+  type: string;
+  payload: unknown;
 }
 
 export interface PersistedInventoryItem {
@@ -169,7 +171,7 @@ function foodFromInventoryRow(row: InventoryItemRow): FoodItem {
   }
   const attributes = attributesRecord(row.attributes, row.id);
   const satiety = attributes.satiety;
-  if (!Number.isSafeInteger(satiety) || typeof satiety !== "number") {
+  if (typeof satiety !== "number" || !Number.isSafeInteger(satiety)) {
     throw new DomainInvariantError(`Food item ${row.id} has invalid satiety`);
   }
   return createFoodItem(row.id, row.label, satiety);
@@ -180,8 +182,6 @@ function validatePersonSnapshot(person: PersonState, at: SimTime): void {
   assertNonNegativeSafeInteger(person.mealsEaten, "Meals eaten");
   assertNonNegativeSafeInteger(person.sleepSessions, "Sleep sessions");
 
-  // Constructors validate ranges/rates. Evaluating at the snapshot time also
-  // rejects future-recorded physiology states.
   const hunger = createHungerState(
     person.hunger.value,
     person.hunger.recordedAt,
@@ -299,17 +299,30 @@ async function loadPersonStateInTransaction(
   return mapPersonState(row, foodRows);
 }
 
+function claimedPayloadPersonId(value: unknown, eventId: ScheduledEventId): string {
+  if (typeof value !== "object" || value === null || Array.isArray(value)) {
+    throw new DomainInvariantError(`Scheduled event ${eventId} payload must be an object`);
+  }
+  const personId = (value as Record<string, unknown>).personId;
+  if (typeof personId !== "string" || personId.length === 0) {
+    throw new DomainInvariantError(`Scheduled event ${eventId} payload has no personId`);
+  }
+  return personId;
+}
+
 async function lockClaimedEvent(
   client: PoolClient,
   worldId: WorldId,
   scheduledEventId: ScheduledEventId,
   workerId: string,
+  expectedType: string,
+  personId: PersonId,
 ): Promise<{ readonly dueAt: SimTime; readonly correlationId: ReturnType<typeof asCorrelationId> }> {
   if (workerId.length === 0) {
     throw new DomainInvariantError("workerId cannot be empty");
   }
   const result = await client.query<ClaimedScheduledRow>(
-    `SELECT due_at, correlation_id
+    `SELECT due_at, correlation_id, type, payload
        FROM scheduled_events
       WHERE world_id = $1
         AND id = $2
@@ -322,6 +335,17 @@ async function lockClaimedEvent(
   if (row === undefined) {
     throw new DomainInvariantError(
       `Scheduled event ${scheduledEventId} is not owned by worker ${workerId}`,
+    );
+  }
+  if (row.type !== expectedType) {
+    throw new DomainInvariantError(
+      `Scheduled event ${scheduledEventId} has type ${row.type}, expected ${expectedType}`,
+    );
+  }
+  const claimedPersonId = claimedPayloadPersonId(row.payload, scheduledEventId);
+  if (claimedPersonId !== String(personId)) {
+    throw new DomainInvariantError(
+      `Scheduled event ${scheduledEventId} targets ${claimedPersonId}, expected ${personId}`,
     );
   }
   return {
@@ -455,12 +479,11 @@ export class PostgresPersonRepository {
     worldId: WorldId,
     personId: PersonId,
   ): Promise<PersistedPersonState | undefined> {
-    const client = await this.#pool.connect();
-    try {
-      return await loadPersonStateInTransaction(client, worldId, personId, false);
-    } finally {
-      client.release();
-    }
+    return withTransaction(
+      this.#pool,
+      (client) => loadPersonStateInTransaction(client, worldId, personId, false),
+      "repeatable read",
+    );
   }
 
   async listInventory(
@@ -531,72 +554,85 @@ export class PostgresPersonRepository {
   async consumeFoodClaimed(
     input: ClaimedConsumeFoodInput,
   ): Promise<ClaimedPersonTransitionResult> {
-    return this.#commitClaimedTransition(input, async (client, current, at) => {
-      const transition = consumeFood(current.person, input.itemId, at);
-      await updatePhysiology(client, input.worldId, transition.person, at);
-      const itemUpdate = await client.query(
-        `UPDATE inventory_items
-            SET status = 'consumed',
-                consumed_at_sim = $4,
-                updated_at_sim = $4,
-                updated_at = now()
-          WHERE world_id = $1
-            AND id = $2
-            AND owner_id = $3
-            AND status = 'available'`,
-        [input.worldId, input.itemId, input.personId, at.toString()],
-      );
-      if (itemUpdate.rowCount !== 1) {
-        throw new DomainInvariantError(`Food item is not available: ${input.itemId}`);
-      }
-      return {
-        person: transition.person,
-        eventType: "person.ate",
-        payload: {
-          itemId: transition.item.id,
-          hungerBefore: transition.hungerBefore,
-          hungerAfter: transition.hungerAfter,
-        },
-      };
-    });
+    return this.#commitClaimedTransition(
+      input,
+      "person.hunger_threshold",
+      async (client, current, at) => {
+        const transition = consumeFood(current.person, input.itemId, at);
+        await updatePhysiology(client, input.worldId, transition.person, at);
+        const itemUpdate = await client.query(
+          `UPDATE inventory_items
+              SET status = 'consumed',
+                  consumed_at_sim = $4,
+                  updated_at_sim = $4,
+                  updated_at = now()
+            WHERE world_id = $1
+              AND id = $2
+              AND owner_id = $3
+              AND status = 'available'`,
+          [input.worldId, input.itemId, input.personId, at.toString()],
+        );
+        if (itemUpdate.rowCount !== 1) {
+          throw new DomainInvariantError(`Food item is not available: ${input.itemId}`);
+        }
+        return {
+          person: transition.person,
+          eventType: "person.ate",
+          payload: {
+            itemId: transition.item.id,
+            hungerBefore: transition.hungerBefore,
+            hungerAfter: transition.hungerAfter,
+          },
+        };
+      },
+    );
   }
 
   async beginSleepClaimed(
     input: ClaimedPersonTransitionInput,
   ): Promise<ClaimedPersonTransitionResult> {
-    return this.#commitClaimedTransition(input, async (client, current, at) => {
-      const person = beginSleep(current.person, at);
-      await updatePhysiology(client, input.worldId, person, at);
-      return {
-        person,
-        eventType: "person.sleep_started",
-        payload: {
-          energy: person.energy.value,
-          sleepSessions: person.sleepSessions,
-        },
-      };
-    });
+    return this.#commitClaimedTransition(
+      input,
+      "person.energy_low",
+      async (client, current, at) => {
+        const person = beginSleep(current.person, at);
+        await updatePhysiology(client, input.worldId, person, at);
+        return {
+          person,
+          eventType: "person.sleep_started",
+          payload: {
+            energy: person.energy.value,
+            sleepSessions: person.sleepSessions,
+          },
+        };
+      },
+    );
   }
 
   async wakeUpClaimed(
     input: ClaimedPersonTransitionInput,
   ): Promise<ClaimedPersonTransitionResult> {
-    return this.#commitClaimedTransition(input, async (client, current, at) => {
-      const person = wakeUp(current.person, at);
-      await updatePhysiology(client, input.worldId, person, at);
-      return {
-        person,
-        eventType: "person.woke_up",
-        payload: {
-          energy: person.energy.value,
-          sleepSessions: person.sleepSessions,
-        },
-      };
-    });
+    return this.#commitClaimedTransition(
+      input,
+      "person.energy_recovered",
+      async (client, current, at) => {
+        const person = wakeUp(current.person, at);
+        await updatePhysiology(client, input.worldId, person, at);
+        return {
+          person,
+          eventType: "person.woke_up",
+          payload: {
+            energy: person.energy.value,
+            sleepSessions: person.sleepSessions,
+          },
+        };
+      },
+    );
   }
 
   async #commitClaimedTransition(
     input: ClaimedPersonTransitionInput,
+    expectedScheduledType: string,
     transition: (
       client: PoolClient,
       current: PersistedPersonState,
@@ -615,6 +651,8 @@ export class PostgresPersonRepository {
         input.worldId,
         input.scheduledEventId,
         input.workerId,
+        expectedScheduledType,
+        input.personId,
       );
       await advanceWorldTimeInTransaction(client, input.worldId, claim.dueAt);
 
