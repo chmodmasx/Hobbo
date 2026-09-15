@@ -10,10 +10,18 @@
 - [x] Granite schema-constrained smoke test added.
 - [x] Nomic embeddings smoke test added.
 - [x] Monorepo workspace initialized.
+- [x] GitHub Actions model smoke workflow green on `ubuntu-latest` with real Q4_K_M GGUFs.
+
+### Verified model contract
+
+- Cognition: Granite 4.1 3B Q4_K_M through pinned llama.cpp commit `6011c34ce6099646ccdf0d39a61c6e681477c178`.
+- Schema-constrained decision returned `affordance_id=eat_owned_food` for the deterministic hunger fixture.
+- Embeddings: Nomic Embed Text v2 MoE Q4_K_M through llama.cpp's OpenAI-compatible embeddings endpoint.
+- Embedding dimensionality observed in CI: 768.
+- Model weights and the pinned llama.cpp CPU build are restored from GitHub Actions cache on subsequent runs.
 
 ## Next implementation milestones
 
-- [ ] GitHub Actions model smoke workflow green on `ubuntu-latest`.
 - [ ] Domain types package.
 - [ ] Deterministic world clock.
 - [ ] Scheduled-event queue.
