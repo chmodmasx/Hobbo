@@ -19,6 +19,8 @@
     "pg": "8.23.0"
   },
   "devDependencies": {
+    "@hobbo/ai-provider": "workspace:*",
+    "@hobbo/cognition": "workspace:*",
     "@types/pg": "8.23.1"
   }
 }
