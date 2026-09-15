@@ -24,14 +24,17 @@
 
 - [x] Domain types package.
 - [x] Deterministic bigint world clock with no wall-clock dependency.
+- [x] Canonical simulation-time unit: one integer tick equals one simulated second.
 - [x] Stable scheduled-event priority queue and deterministic scheduler.
 - [x] Domain-event envelope, append-only in-memory log and replay primitives.
 - [x] Shared action registry/validator for player, rule, utility, LLM and replay origins.
 - [x] Deterministic mock cognitive provider.
 - [x] Replay cognitive provider that never silently re-infers missing decisions.
+- [x] Deterministic seeded random stream with persistable state.
+- [x] Property-based determinism/invariant tests.
 - [x] Initial PostgreSQL migration for worlds, domain events, scheduled events and cognition runs.
 - [x] PostgreSQL migration smoke test on a real PostgreSQL 17 service in GitHub Actions.
-- [x] Strict TypeScript core CI green with 14 unit tests.
+- [x] Strict TypeScript core CI green with 27 tests across six test files.
 
 ### Core invariants currently enforced
 
@@ -40,18 +43,37 @@
 - Handlers may schedule additional work at the current simulation time without reordering earlier queued work.
 - Event history uses contiguous sequence numbers and nondecreasing simulation time.
 - Duplicate event and scheduled-event identifiers are rejected.
+- Scheduler snapshot/restore preserves exact future execution order.
+- Equal RNG seeds and restored RNG snapshots reproduce the exact same stream.
 - Player and AI action requests pass through the same action validation rules.
 - Cognitive providers cannot invent affordances not supplied by the simulation.
 - Replay cognition fails on missing or no-longer-valid recorded decisions rather than calling a model.
 - PostgreSQL rejects negative simulation time and invalid scheduler states.
 
+## First headless physiology gate completed
+
+- [x] Minimal hunger/food/inventory domain slice.
+- [x] Hunger integrated analytically from elapsed simulation time; no per-agent physiology tick.
+- [x] Exact scheduled time for hunger threshold crossings.
+- [x] Food consumption validated through the shared action registry.
+- [x] Property-based tests for need bounds and threshold timing.
+- [x] 20-agent, 30-simulated-day headless fixture.
+- [x] Same seed produces an identical final result; different seeds produce different deterministic populations.
+- [x] Every headless meal creates a domain event and consumes exactly one owned inventory item.
+
+This gate proves that the deterministic/event-driven simulation kernel can run a small physiological population coherently without a global NPC tick. It does **not** yet prove coherent social lives, economy, memory, planning or LLM-driven behavior.
+
 ## Next implementation milestones
 
-- [ ] Property-based world invariants.
-- [ ] Minimal physiology/food/inventory domain slice.
-- [ ] Headless 20-agent simulation fixture.
-- [ ] Deterministic seed/random stream abstraction.
-- [ ] Persistence repositories/transactions over the core schema.
+- [ ] Persistence repositories/transactions over the core PostgreSQL schema.
+- [ ] Persisted scheduler recovery and event-replay integration test.
+- [ ] Sleep/energy physiology slice.
+- [ ] Basic routines and commitments using scheduled events.
+- [ ] Ledger economy, employment and housing foundations.
+- [ ] Belief/perception and social-state foundations.
+- [ ] Memory storage/retrieval and Nomic embedding integration.
+- [ ] Ambiguous-choice cognition integration using mock/replay first, Granite second.
+- [ ] 20-agent long-running social simulation gate.
 - [ ] Minimal Sprite Forge Blender fixture.
 
-The project should not begin large-scale visual/content work before the headless simulation gates are met.
+The project should not begin large-scale visual/content work before the long-running social simulation gates are met.
