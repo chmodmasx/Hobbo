@@ -10,3 +10,4 @@ export * from "./employment-repository.ts";
 export * from "./housing-repository.ts";
 export * from "./social-repository.ts";
 export * from "./memory-repository.ts";
+export * from "./conversation-repository.ts";
