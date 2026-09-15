@@ -36,6 +36,7 @@ interface RoutinePayload {
 export interface HeadlessRoutineAgentSummary {
   readonly id: string;
   readonly fulfilledCommitments: number;
+  readonly firstFulfilledAt: SimTime | null;
 }
 
 export interface HeadlessRoutineSimulationResult {
@@ -93,6 +94,7 @@ export function runHeadlessRoutineSimulation(
   const routines = new Map<string, PeriodicRoutine<RoutinePayload>>();
   const commitmentsByScheduledEvent = new Map<string, Commitment<RoutinePayload>>();
   const fulfilledByOwner = new Map<string, number>();
+  const firstFulfilledAtByOwner = new Map<string, SimTime>();
   let maxFutureQueueSize = 0;
 
   function scheduleNext(
@@ -132,6 +134,9 @@ export function runHeadlessRoutineSimulation(
       commitmentsByScheduledEvent.delete(String(scheduled.id));
       const ownerKey = String(fulfilled.ownerId);
       fulfilledByOwner.set(ownerKey, (fulfilledByOwner.get(ownerKey) ?? 0) + 1);
+      if (!firstFulfilledAtByOwner.has(ownerKey)) {
+        firstFulfilledAtByOwner.set(ownerKey, scheduler.clock.now());
+      }
 
       eventLog.append({
         id: asEventId(`fulfilled:${fulfilled.id}`),
@@ -159,7 +164,11 @@ export function runHeadlessRoutineSimulation(
   );
 
   const agents = [...fulfilledByOwner.entries()]
-    .map(([id, fulfilledCommitments]) => ({ id, fulfilledCommitments }))
+    .map(([id, fulfilledCommitments]) => ({
+      id,
+      fulfilledCommitments,
+      firstFulfilledAt: firstFulfilledAtByOwner.get(id) ?? null,
+    }))
     .sort((a, b) => a.id.localeCompare(b.id));
 
   return {
