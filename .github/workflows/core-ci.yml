@@ -48,9 +48,9 @@ jobs:
         run: pnpm test
 
   database:
-    name: PostgreSQL migration smoke test
+    name: PostgreSQL persistence integration
     runs-on: ubuntu-latest
-    timeout-minutes: 10
+    timeout-minutes: 15
 
     services:
       postgres:
@@ -78,13 +78,18 @@ jobs:
       - name: Checkout Hobbo
         uses: actions/checkout@v4
 
-      - name: Install PostgreSQL client
+      - name: Install runtime dependencies
         run: |
+          npm install --global pnpm@10.15.1
           sudo apt-get update
           sudo apt-get install -y --no-install-recommends postgresql-client
+          pnpm install --no-frozen-lockfile
 
       - name: Apply core migration
         run: psql -v ON_ERROR_STOP=1 -f packages/database/migrations/0001_core.sql
 
-      - name: Run persistence smoke checks
+      - name: Run SQL schema smoke checks
         run: psql -v ON_ERROR_STOP=1 -f packages/database/test/0001_core.sql
+
+      - name: Run repository integration tests
+        run: pnpm --filter @hobbo/database test:integration
