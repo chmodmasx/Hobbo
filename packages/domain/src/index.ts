@@ -9,6 +9,8 @@ export type ScheduledEventId = Brand<string, "ScheduledEventId">;
 export type ActionId = Brand<string, "ActionId">;
 export type AffordanceId = Brand<string, "AffordanceId">;
 export type CognitionRequestId = Brand<string, "CognitionRequestId">;
+export type RoutineId = Brand<string, "RoutineId">;
+export type CommitmentId = Brand<string, "CommitmentId">;
 
 export type SimTime = Brand<bigint, "SimTime">;
 export type SimDuration = Brand<bigint, "SimDuration">;
@@ -165,4 +167,12 @@ export function asAffordanceId(value: string): AffordanceId {
 
 export function asCognitionRequestId(value: string): CognitionRequestId {
   return value as CognitionRequestId;
+}
+
+export function asRoutineId(value: string): RoutineId {
+  return value as RoutineId;
+}
+
+export function asCommitmentId(value: string): CommitmentId {
+  return value as CommitmentId;
 }
