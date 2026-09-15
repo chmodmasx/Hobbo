@@ -1,7 +1,13 @@
 import {
   DomainInvariantError,
+  asLedgerTransactionId,
+  asRoutineId,
+  type EmploymentId,
+  type EntityId,
   type LedgerAccountId,
   type LedgerTransactionId,
+  type RoutineId,
+  type SimDuration,
   type SimTime,
   type WorldId,
 } from "@hobbo/domain";
@@ -39,6 +45,25 @@ export interface LedgerTransactionDraft {
   readonly idempotencyKey: string;
   readonly entries: readonly LedgerEntryDraft[];
   readonly metadata?: unknown;
+}
+
+export interface EmploymentTerms {
+  readonly id: EmploymentId;
+  readonly worldId: WorldId;
+  readonly employerId: EntityId;
+  readonly employeeId: EntityId;
+  readonly employerAccountId: LedgerAccountId;
+  readonly employeeAccountId: LedgerAccountId;
+  readonly currency: string;
+  readonly wagePerShift: bigint;
+  readonly workPeriod: SimDuration;
+  readonly workPhase: SimDuration;
+  readonly startsAt: SimTime;
+}
+
+export interface EmploymentShiftPayload {
+  readonly employmentId: string;
+  readonly employerId: string;
 }
 
 export function normalizeCurrencyCode(currency: string): string {
@@ -116,4 +141,55 @@ export function validateLedgerTransactionDraft(
     throw new DomainInvariantError("Idempotency key cannot be empty");
   }
   validateBalancedEntries(draft.entries);
+}
+
+export function validateEmploymentTerms(terms: EmploymentTerms): string {
+  if (String(terms.id).length === 0) {
+    throw new DomainInvariantError("Employment id cannot be empty");
+  }
+  if (String(terms.employerId).length === 0 || String(terms.employeeId).length === 0) {
+    throw new DomainInvariantError("Employment parties cannot be empty");
+  }
+  if (terms.employerId === terms.employeeId) {
+    throw new DomainInvariantError("Employer and employee must differ");
+  }
+  if (terms.employerAccountId === terms.employeeAccountId) {
+    throw new DomainInvariantError("Employer and employee ledger accounts must differ");
+  }
+  assertPositiveMinorUnits(terms.wagePerShift);
+  if (terms.workPeriod <= 0n) {
+    throw new DomainInvariantError("Employment work period must be greater than zero");
+  }
+  if (terms.workPhase < 0n || terms.workPhase >= terms.workPeriod) {
+    throw new DomainInvariantError(
+      `Employment work phase must be within [0, period), received phase=${terms.workPhase} period=${terms.workPeriod}`,
+    );
+  }
+  return normalizeCurrencyCode(terms.currency);
+}
+
+export function workRoutineIdForEmployment(employmentId: EmploymentId): RoutineId {
+  if (String(employmentId).length === 0) {
+    throw new DomainInvariantError("Employment id cannot be empty");
+  }
+  return asRoutineId(`employment:${encodeURIComponent(String(employmentId))}:shift`);
+}
+
+export function salaryIdempotencyKey(
+  employmentId: EmploymentId,
+  commitmentId: string,
+): string {
+  if (commitmentId.length === 0) {
+    throw new DomainInvariantError("Salary commitment id cannot be empty");
+  }
+  return `salary:${encodeURIComponent(String(employmentId))}:${encodeURIComponent(commitmentId)}`;
+}
+
+export function salaryTransactionId(
+  employmentId: EmploymentId,
+  commitmentId: string,
+): LedgerTransactionId {
+  return asLedgerTransactionId(
+    `salary:${encodeURIComponent(String(employmentId))}:${encodeURIComponent(commitmentId)}`,
+  );
 }
