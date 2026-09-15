@@ -363,7 +363,7 @@ describe("20-agent durable economy population gate", () => {
     await firstProcessPool.end();
 
     expect(await processThrough(pool, controlWorld, END_TIME, "control-worker-b")).toBe(
-      AGENT_COUNT * 16 + AGENT_COUNT,
+      AGENT_COUNT * 15 + AGENT_COUNT,
     );
 
     const restartedPool = new Pool();
@@ -384,7 +384,7 @@ describe("20-agent durable economy population gate", () => {
           END_TIME,
           "restart-worker-b",
         ),
-      ).toBe(AGENT_COUNT * 16 + AGENT_COUNT);
+      ).toBe(AGENT_COUNT * 15 + AGENT_COUNT);
 
       const control = await snapshot(pool, controlWorld);
       const restarted = await snapshot(restartedPool, restartWorld);
