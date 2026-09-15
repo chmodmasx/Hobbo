@@ -13,6 +13,7 @@
   "dependencies": {
     "@hobbo/domain": "workspace:*",
     "@hobbo/economy": "workspace:*",
+    "@hobbo/memory": "workspace:*",
     "@hobbo/simulation": "workspace:*",
     "@hobbo/social": "workspace:*",
     "pg": "8.23.0"
