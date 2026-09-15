@@ -62,6 +62,10 @@ export interface CognitionRunStore {
     requestId: CognitionRequestId,
     errorMessage: string,
   ): Promise<DurableCognitionRun>;
+  get(
+    worldId: WorldId,
+    requestId: CognitionRequestId,
+  ): Promise<DurableCognitionRun | undefined>;
 }
 
 function normalizeJson(value: unknown, inArray = false): unknown {
@@ -236,11 +240,7 @@ export class DurableCognitionExecutor<TContext = unknown> {
       schemaConfig: preparation.schemaConfig,
     });
     if (queued.status === "completed") {
-      return persistedDecision(
-        queued.decision,
-        request,
-        queued.providerId,
-      );
+      return persistedDecision(queued.decision, request, queued.providerId);
     }
     if (queued.status === "failed") {
       throw new DomainInvariantError(
@@ -252,11 +252,7 @@ export class DurableCognitionExecutor<TContext = unknown> {
 
     const started = await this.#store.start(worldId, request.id);
     if (started.status === "completed") {
-      return persistedDecision(
-        started.decision,
-        request,
-        started.providerId,
-      );
+      return persistedDecision(started.decision, request, started.providerId);
     }
     if (started.status !== "running") {
       throw new DomainInvariantError(
@@ -281,8 +277,32 @@ export class DurableCognitionExecutor<TContext = unknown> {
       );
       return run.decision;
     } catch (error) {
+      const alreadyCompleted = await this.#store.get(worldId, request.id);
+      if (alreadyCompleted?.status === "completed") {
+        return persistedDecision(
+          alreadyCompleted.decision,
+          request,
+          alreadyCompleted.providerId,
+        );
+      }
+
       const message = error instanceof Error ? error.message : String(error);
-      await this.#store.fail(worldId, request.id, message);
+      try {
+        await this.#store.fail(worldId, request.id, message);
+      } catch (failureError) {
+        const completedDuringFailure = await this.#store.get(
+          worldId,
+          request.id,
+        );
+        if (completedDuringFailure?.status === "completed") {
+          return persistedDecision(
+            completedDuringFailure.decision,
+            request,
+            completedDuringFailure.providerId,
+          );
+        }
+        throw failureError;
+      }
       throw error;
     }
   }
