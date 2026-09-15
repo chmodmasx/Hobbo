@@ -8,6 +8,19 @@ import {
   type EventSequence,
 } from "@hobbo/domain";
 
+function freezeEvent<TType extends string, TPayload>(
+  event: DomainEvent<TType, TPayload>,
+): DomainEvent<TType, TPayload> {
+  if (event.targetIds === undefined) {
+    return Object.freeze({ ...event });
+  }
+
+  return Object.freeze({
+    ...event,
+    targetIds: Object.freeze([...event.targetIds]),
+  });
+}
+
 export class InMemoryDomainEventLog {
   #events: DomainEvent[] = [];
   #eventIds = new Set<string>();
@@ -36,14 +49,10 @@ export class InMemoryDomainEventLog {
       );
     }
 
-    const event = Object.freeze({
+    const event = freezeEvent({
       ...draft,
-      targetIds:
-        draft.targetIds === undefined
-          ? undefined
-          : Object.freeze([...draft.targetIds]),
       sequence: this.#nextSequence,
-    }) as DomainEvent<TType, TPayload>;
+    });
 
     this.#events.push(event);
     this.#eventIds.add(id);
@@ -83,15 +92,7 @@ export class InMemoryDomainEventLog {
         throw new DomainInvariantError(`Duplicate event id in restore: ${id}`);
       }
 
-      this.#events.push(
-        Object.freeze({
-          ...event,
-          targetIds:
-            event.targetIds === undefined
-              ? undefined
-              : Object.freeze([...event.targetIds]),
-        }),
-      );
+      this.#events.push(freezeEvent(event));
       this.#eventIds.add(id);
       expected += 1n;
       previousTime = event.simTime;
