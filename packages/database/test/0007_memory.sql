@@ -25,10 +25,9 @@ BEGIN
   IF (SELECT count(*) FROM memory_embeddings WHERE world_id = 'memory-sql-test') <> 2 THEN
     RAISE EXCEPTION 'multiple model embeddings were not persisted';
   END IF;
-  IF NOT ('person-bob' = ANY(
-    (SELECT related_entity_ids FROM memories
-      WHERE world_id = 'memory-sql-test' AND id = 'memory-1')
-  )) THEN
+  IF NOT (SELECT related_entity_ids @> ARRAY['person-bob']::TEXT[]
+            FROM memories
+           WHERE world_id = 'memory-sql-test' AND id = 'memory-1') THEN
     RAISE EXCEPTION 'related entity ids were not persisted';
   END IF;
 END
