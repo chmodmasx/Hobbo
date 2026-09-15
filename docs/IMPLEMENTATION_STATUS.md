@@ -65,6 +65,8 @@
 - [x] Crash/restart integration test opens a fresh PostgreSQL pool with no in-memory scheduler state and resumes deterministically.
 - [x] Continuous and crash/restarted 10-step simulations produce identical event history and final world sequence/time.
 - [x] Event append concurrency relies on the explicit world-row lock under `READ COMMITTED`; redundant `SERIALIZABLE` aborts were removed.
+- [x] Scheduler claims are constrained to the global earliest unresolved simulation-time frontier across both `pending` and `processing` work.
+- [x] Multiple workers may still claim different events at the same frontier time, but no worker can jump into a later simulation time while earlier consequences remain unresolved.
 
 ## Headless physiology gates completed
 
@@ -234,23 +236,51 @@
 - [x] A fresh PostgreSQL pool test replays a partially applied conversation delivery and proves exactly one listener perception, one listener memory, one speaker memory and one familiarity effect per direction.
 - [x] Migration `0008_conversations.sql`, SQL smoke checks and ten conversation-specific PostgreSQL integration cases are green.
 
+## Durable person/body/inventory state completed
+
+- [x] `persons` is the durable identity anchor for simulated people; current body state is not reconstructed from an RNG seed after restart.
+- [x] `person_physiology` persists bounded hunger, energy, sleep mode, rates, meal/sleep counters, simulation timestamps and a monotonic state version.
+- [x] `inventory_items` persists individually identifiable physical items with explicit `available` or `consumed` state; consumed food is retained as history rather than deleted.
+- [x] PostgreSQL constraints enforce body ranges, non-negative counters/rates, coherent recorded/update times and valid item-consumption state.
+- [x] `PostgresPersonRepository` reconstructs the pure `@hobbo/agents` `PersonState` from durable state under a repeatable-read snapshot.
+- [x] Claimed eat/sleep/wake transitions reuse the pure agent functions rather than reimplementing physiology rules in SQL.
+- [x] A claimed body transition atomically updates physiology/inventory, appends its domain event, schedules consequences and completes the scheduler claim.
+- [x] Claimed transitions verify scheduler ownership, expected event type and target `personId`; unrelated claims cannot mutate an arbitrary person.
+- [x] Failed transitions roll back body state, inventory, events, consequences and claim completion as one unit.
+- [x] A 20-agent, 30-day PostgreSQL physiology gate survives a process-style restart with an abandoned scheduler lease and produces the same semantic body/inventory/event/future-scheduler state as the uninterrupted control run.
+- [x] Hunger that becomes actionable while a person is sleeping is durably deferred to the wake frontier rather than allowing impossible “eat while asleep” behavior.
+- [x] Migration `0009_person_state.sql`, SQL smoke checks, body transition authority tests and the durable population physiology gate are green.
+
+## Durable 20-agent economy population gate completed
+
+- [x] Twenty agents execute 30 daily work shifts each while paying a periodic rent obligation through the same durable scheduler/commitment/ledger infrastructure.
+- [x] A process restart after an intentionally abandoned day-15 shift claim converges to the exact same balances, commitments, domain-event counts and future schedule as an uninterrupted 30-day control run.
+- [x] The restarted run records exactly one additional scheduler claim attempt while semantic state remains identical.
+- [x] The gate exercises 600 salary postings, 20 rent postings and 620 fulfilled commitments without duplicate financial effects.
+
 ### Current CI gate
 
 - [x] TypeScript typecheck green across the workspace.
-- [x] 100/100 non-integration tests green across 18 files.
-- [x] 58/58 PostgreSQL integration tests green across 13 files on PostgreSQL 17.
-- [x] Database migrations `0001` through `0008` plus all SQL smoke checks green.
+- [x] 106/106 non-integration tests green across 20 files.
+- [x] 69/69 PostgreSQL integration tests green across 18 files on PostgreSQL 17.
+- [x] Database migrations `0001` through `0009` plus all SQL smoke checks green.
+- [x] 20-agent, 30-day durable physiology restart gate green.
+- [x] 20-agent, 30-day durable employment/rent restart gate green.
+- [x] Scheduler temporal-frontier concurrency gate green.
 - [x] Real Granite cognition and Nomic embedding GGUF smoke tests green through pinned llama.cpp.
 - [x] Real Granite cognition smoke passes through `GraniteCognitiveProvider`, not only the raw endpoint request.
 - [x] Real Nomic embedding smoke passes through `NomicEmbeddingProvider`, not only the raw endpoint request.
 
-These gates prove that the deterministic/event-driven kernel can run small physiological populations, recover exactly from worker/process crashes, maintain durable recurring or one-time commitments, conserve money under concurrent spending, model employment and housing with crash-safe exactly-once financial effects, maintain private beliefs plus directional social state without conflating them with objective world truth, persist/retrieve private agent memories with deterministic semantic ranking, execute bounded ambiguous LLM choices with complete durable provenance and replay, and propagate conversational information/rumors into listener-specific evidence, beliefs, memories and relationships without leaking internal truth metadata. They do **not** yet prove sustained LLM-generated natural dialogue, long-term planning or coherent long-running social lives across the full 20-agent population.
+These gates prove that the deterministic/event-driven kernel can run physiological populations, recover exactly from worker/process crashes, persist body and physical inventory state, maintain durable recurring or one-time commitments, conserve money under concurrent spending, model employment and housing with crash-safe exactly-once financial effects, maintain private beliefs plus directional social state without conflating them with objective world truth, persist/retrieve private agent memories with deterministic semantic ranking, execute bounded ambiguous LLM choices with complete durable provenance and replay, and propagate conversational information/rumors into listener-specific evidence, beliefs, memories and relationships without leaking internal truth metadata. Two independent 20-agent, 30-day PostgreSQL population gates now prove restart-equivalent physiology/inventory and economy/housing histories. They do **not** yet prove that all of those systems remain coherent when driven together by one production scheduled-event runtime, nor do they yet prove sustained LLM-generated dialogue, long-term planning or coherent long-running social lives across the full population.
 
 ## Next implementation milestones
 
 - [x] Memory storage/retrieval and Nomic embedding integration.
 - [x] Ambiguous-choice cognition integration using mock/replay first, Granite second.
 - [x] Conversation memory and information/rumor propagation.
+- [x] Durable person/body/inventory persistence and 20-agent restart gate.
+- [ ] Production scheduled-event dispatcher/worker shared by integrated simulation runs.
+- [ ] 20-agent durable integrated-life gate combining physiology, employment, housing and commitments on one timeline.
 - [ ] 20-agent long-running social simulation gate.
 - [ ] Long-term goals/plans and reflection over multi-day histories.
 - [ ] Sustained LLM-generated dialogue using the durable conversation substrate.
