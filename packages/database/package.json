@@ -12,6 +12,7 @@
   },
   "dependencies": {
     "@hobbo/domain": "workspace:*",
+    "@hobbo/simulation": "workspace:*",
     "pg": "8.23.0"
   },
   "devDependencies": {
