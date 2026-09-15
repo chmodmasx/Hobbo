@@ -233,3 +233,4 @@ export function runHeadlessFoodSimulation(
 export * from "./sleep.ts";
 export * from "./routines.ts";
 export * from "./social-life.ts";
+export * from "./integrated-life.ts";
