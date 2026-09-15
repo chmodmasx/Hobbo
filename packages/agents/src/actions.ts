@@ -3,6 +3,8 @@ import { asActionId } from "@hobbo/domain";
 import type { PersonState } from "./index.ts";
 
 export const CONSUME_FOOD_ACTION_ID = asActionId("inventory.consume_food");
+export const BEGIN_SLEEP_ACTION_ID = asActionId("physiology.begin_sleep");
+export const WAKE_UP_ACTION_ID = asActionId("physiology.wake_up");
 
 export interface ConsumeFoodActionInput {
   readonly itemId: string;
@@ -17,6 +19,17 @@ export function isConsumeFoodActionInput(
     "itemId" in input &&
     typeof input.itemId === "string" &&
     input.itemId.length > 0
+  );
+}
+
+function isEmptyActionInput(input: unknown): boolean {
+  return (
+    input === null ||
+    input === undefined ||
+    (typeof input === "object" &&
+      input !== null &&
+      !Array.isArray(input) &&
+      Object.keys(input).length === 0)
   );
 }
 
@@ -42,6 +55,56 @@ export function createConsumeFoodActionDefinition(): ActionDefinition<PersonStat
         };
       }
 
+      return { ok: true };
+    },
+  };
+}
+
+export function createBeginSleepActionDefinition(): ActionDefinition<PersonState> {
+  return {
+    id: BEGIN_SLEEP_ACTION_ID,
+    label: "Begin sleeping",
+    description: "Transition an awake person into the sleeping physiology mode.",
+    validate(context, input) {
+      if (!isEmptyActionInput(input)) {
+        return {
+          ok: false,
+          code: "invalid_input",
+          message: "begin_sleep does not accept action input",
+        };
+      }
+      if (context.worldState.energy.mode === "sleeping") {
+        return {
+          ok: false,
+          code: "already_sleeping",
+          message: "Person is already sleeping",
+        };
+      }
+      return { ok: true };
+    },
+  };
+}
+
+export function createWakeUpActionDefinition(): ActionDefinition<PersonState> {
+  return {
+    id: WAKE_UP_ACTION_ID,
+    label: "Wake up",
+    description: "Transition a sleeping person back into the awake physiology mode.",
+    validate(context, input) {
+      if (!isEmptyActionInput(input)) {
+        return {
+          ok: false,
+          code: "invalid_input",
+          message: "wake_up does not accept action input",
+        };
+      }
+      if (context.worldState.energy.mode === "awake") {
+        return {
+          ok: false,
+          code: "already_awake",
+          message: "Person is already awake",
+        };
+      }
       return { ok: true };
     },
   };
