@@ -17,6 +17,16 @@ export interface HungerState {
   readonly ratePerHour: number;
 }
 
+export type EnergyMode = "awake" | "sleeping";
+
+export interface EnergyState {
+  readonly value: number;
+  readonly recordedAt: SimTime;
+  readonly mode: EnergyMode;
+  readonly awakeDrainPerHour: number;
+  readonly sleepRecoveryPerHour: number;
+}
+
 export interface FoodItem {
   readonly id: string;
   readonly kind: "food";
@@ -27,8 +37,10 @@ export interface FoodItem {
 export interface PersonState {
   readonly id: PersonId;
   readonly hunger: HungerState;
+  readonly energy: EnergyState;
   readonly inventory: readonly FoodItem[];
   readonly mealsEaten: number;
+  readonly sleepSessions: number;
 }
 
 function assertNeedValue(value: number, label: string): void {
@@ -39,10 +51,17 @@ function assertNeedValue(value: number, label: string): void {
   }
 }
 
-function assertRate(ratePerHour: number): void {
+function assertNonNegativeRate(ratePerHour: number, label: string): void {
   if (!Number.isSafeInteger(ratePerHour) || ratePerHour < 0) {
-    throw new DomainInvariantError("Hunger rate must be a non-negative integer");
+    throw new DomainInvariantError(`${label} must be a non-negative integer`);
   }
+}
+
+function ceilDivPositive(numerator: bigint, denominator: bigint): bigint {
+  if (numerator < 0n || denominator <= 0n) {
+    throw new DomainInvariantError("ceilDivPositive requires numerator >= 0 and denominator > 0");
+  }
+  return (numerator + denominator - 1n) / denominator;
 }
 
 export function createHungerState(
@@ -51,8 +70,27 @@ export function createHungerState(
   ratePerHour: number,
 ): HungerState {
   assertNeedValue(value, "Hunger");
-  assertRate(ratePerHour);
+  assertNonNegativeRate(ratePerHour, "Hunger rate");
   return { value, recordedAt, ratePerHour };
+}
+
+export function createEnergyState(
+  value: number,
+  recordedAt: SimTime,
+  awakeDrainPerHour: number,
+  sleepRecoveryPerHour: number,
+  mode: EnergyMode = "awake",
+): EnergyState {
+  assertNeedValue(value, "Energy");
+  assertNonNegativeRate(awakeDrainPerHour, "Awake energy drain");
+  assertNonNegativeRate(sleepRecoveryPerHour, "Sleep energy recovery");
+  return {
+    value,
+    recordedAt,
+    mode,
+    awakeDrainPerHour,
+    sleepRecoveryPerHour,
+  };
 }
 
 export function createFoodItem(
@@ -98,11 +136,107 @@ export function timeUntilHunger(
   if (current >= target) return simDuration(0);
   if (state.ratePerHour === 0) return undefined;
 
-  const remaining = BigInt(target - current);
-  const numerator = remaining * BigInt(SIM_HOUR);
-  const denominator = BigInt(state.ratePerHour);
-  const seconds = (numerator + denominator - 1n) / denominator;
-  return simDuration(seconds);
+  const requiredIncrease = BigInt(target - state.value);
+  const absoluteElapsed = ceilDivPositive(
+    requiredIncrease * BigInt(SIM_HOUR),
+    BigInt(state.ratePerHour),
+  );
+  const dueAt = BigInt(state.recordedAt) + absoluteElapsed;
+  return simDuration(dueAt - BigInt(from));
+}
+
+export function energyAt(state: EnergyState, at: SimTime): number {
+  const elapsed = elapsedSimTime(state.recordedAt, at);
+  const rate =
+    state.mode === "awake"
+      ? state.awakeDrainPerHour
+      : state.sleepRecoveryPerHour;
+  const change = (BigInt(elapsed) * BigInt(rate)) / BigInt(SIM_HOUR);
+
+  if (state.mode === "awake") {
+    const value = BigInt(state.value) - change;
+    return Number(value < BigInt(NEED_MIN) ? BigInt(NEED_MIN) : value);
+  }
+
+  const value = BigInt(state.value) + change;
+  return Number(value > BigInt(NEED_MAX) ? BigInt(NEED_MAX) : value);
+}
+
+export function refreshEnergy(state: EnergyState, at: SimTime): EnergyState {
+  return {
+    ...state,
+    value: energyAt(state, at),
+    recordedAt: at,
+  };
+}
+
+export function timeUntilEnergyAtMost(
+  state: EnergyState,
+  target: number,
+  from: SimTime,
+): SimDuration | undefined {
+  assertNeedValue(target, "Energy target");
+  const current = energyAt(state, from);
+  if (current <= target) return simDuration(0);
+  if (state.mode !== "awake" || state.awakeDrainPerHour === 0) return undefined;
+
+  const requiredDrop = BigInt(state.value - target);
+  const absoluteElapsed = ceilDivPositive(
+    requiredDrop * BigInt(SIM_HOUR),
+    BigInt(state.awakeDrainPerHour),
+  );
+  const dueAt = BigInt(state.recordedAt) + absoluteElapsed;
+  return simDuration(dueAt - BigInt(from));
+}
+
+export function timeUntilEnergyAtLeast(
+  state: EnergyState,
+  target: number,
+  from: SimTime,
+): SimDuration | undefined {
+  assertNeedValue(target, "Energy target");
+  const current = energyAt(state, from);
+  if (current >= target) return simDuration(0);
+  if (state.mode !== "sleeping" || state.sleepRecoveryPerHour === 0) {
+    return undefined;
+  }
+
+  const requiredGain = BigInt(target - state.value);
+  const absoluteElapsed = ceilDivPositive(
+    requiredGain * BigInt(SIM_HOUR),
+    BigInt(state.sleepRecoveryPerHour),
+  );
+  const dueAt = BigInt(state.recordedAt) + absoluteElapsed;
+  return simDuration(dueAt - BigInt(from));
+}
+
+export function beginSleep(person: PersonState, at: SimTime): PersonState {
+  if (person.energy.mode === "sleeping") {
+    throw new DomainInvariantError(`Person ${person.id} is already sleeping`);
+  }
+
+  return {
+    ...person,
+    energy: {
+      ...refreshEnergy(person.energy, at),
+      mode: "sleeping",
+    },
+    sleepSessions: person.sleepSessions + 1,
+  };
+}
+
+export function wakeUp(person: PersonState, at: SimTime): PersonState {
+  if (person.energy.mode === "awake") {
+    throw new DomainInvariantError(`Person ${person.id} is already awake`);
+  }
+
+  return {
+    ...person,
+    energy: {
+      ...refreshEnergy(person.energy, at),
+      mode: "awake",
+    },
+  };
 }
 
 export interface ConsumeFoodResult {
