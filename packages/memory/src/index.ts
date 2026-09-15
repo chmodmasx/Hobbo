@@ -95,20 +95,27 @@ function assertBasisPoints(value: number, label: string): void {
   }
 }
 
-function assertEmbedding(vector: readonly number[], label: string): void {
+function embeddingNorm(vector: readonly number[], label: string): number {
   if (vector.length === 0) {
     throw new DomainInvariantError(`${label} cannot be empty`);
   }
-  let normSquared = 0;
   for (const component of vector) {
     if (!Number.isFinite(component)) {
       throw new DomainInvariantError(`${label} must contain only finite numbers`);
     }
-    normSquared += component * component;
   }
-  if (!Number.isFinite(normSquared) || normSquared <= 0) {
+
+  // Math.hypot uses scaling internally and therefore avoids both overflow for
+  // very large components and underflow for subnormal-but-nonzero components.
+  const norm = Math.hypot(...vector);
+  if (!Number.isFinite(norm) || norm <= 0) {
     throw new DomainInvariantError(`${label} must have a non-zero finite norm`);
   }
+  return norm;
+}
+
+function assertEmbedding(vector: readonly number[], label: string): void {
+  embeddingNorm(vector, label);
 }
 
 function assertWeights(weights: RetrievalWeights): void {
@@ -159,30 +166,23 @@ export function cosineSimilarity(
   left: readonly number[],
   right: readonly number[],
 ): number {
-  assertEmbedding(left, "Left embedding");
-  assertEmbedding(right, "Right embedding");
+  const leftNorm = embeddingNorm(left, "Left embedding");
+  const rightNorm = embeddingNorm(right, "Right embedding");
   if (left.length !== right.length) {
     throw new DomainInvariantError(
       `Embedding dimensions differ: ${left.length} != ${right.length}`,
     );
   }
 
-  let dot = 0;
-  let leftNorm = 0;
-  let rightNorm = 0;
+  // Multiply normalized components instead of dividing a raw dot product by
+  // raw squared norms. This remains well-behaved for subnormal and huge input.
+  let cosine = 0;
   for (let index = 0; index < left.length; index += 1) {
-    const a = left[index]!;
-    const b = right[index]!;
-    dot += a * b;
-    leftNorm += a * a;
-    rightNorm += b * b;
+    cosine += (left[index]! / leftNorm) * (right[index]! / rightNorm);
   }
-
-  const denominator = Math.sqrt(leftNorm) * Math.sqrt(rightNorm);
-  if (!Number.isFinite(denominator) || denominator <= 0) {
-    throw new DomainInvariantError("Embedding cosine denominator is invalid");
+  if (!Number.isFinite(cosine)) {
+    throw new DomainInvariantError("Embedding cosine similarity is not finite");
   }
-  const cosine = dot / denominator;
   return Math.max(-1, Math.min(1, cosine));
 }
 
