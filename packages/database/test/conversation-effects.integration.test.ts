@@ -84,13 +84,13 @@ describe("conversation information propagation", () => {
     });
 
     const message = await conversations.appendMessage({
-      id: asConversationMessageId("fabricated-message"),
+      id: asConversationMessageId("private-message"),
       worldId,
       conversationId: conversation.id,
       speakerId: alice,
       sentAt: simTime(110),
       text: "The cafe closes at six.",
-      statements: [statement("fabricated-statement", "18:00", "fabricated")],
+      statements: [statement("private-statement", "18:00", "fabricated")],
     });
 
     const embedder = new DeterministicMockEmbeddingProvider();
@@ -120,9 +120,23 @@ describe("conversation information propagation", () => {
     expect(bobMemories).toHaveLength(1);
     expect(carolMemories).toHaveLength(1);
     expect(aliceMemories).toHaveLength(1);
-    expect(JSON.stringify(bobMemories[0]!.metadata)).not.toContain("fabricated");
-    expect(JSON.stringify(carolMemories[0]!.metadata)).not.toContain("fabricated");
-    expect(JSON.stringify(aliceMemories[0]!.metadata)).toContain("fabricated");
+
+    for (const listenerMemory of [bobMemories[0]!, carolMemories[0]!]) {
+      const metadata = listenerMemory.metadata as Record<string, unknown>;
+      expect(metadata).not.toHaveProperty("statements");
+      expect(metadata).not.toHaveProperty("origin");
+      expect(metadata).not.toHaveProperty("sourceStatementId");
+      expect(metadata.statementIds).toEqual(["private-statement"]);
+    }
+    expect(aliceMemories[0]!.metadata).toMatchObject({
+      statements: [
+        expect.objectContaining({
+          id: "private-statement",
+          origin: "fabricated",
+          sourceStatementId: null,
+        }),
+      ],
+    });
 
     for (const memory of [bobMemories[0]!, carolMemories[0]!, aliceMemories[0]!]) {
       expect(
