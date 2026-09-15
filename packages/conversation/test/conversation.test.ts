@@ -99,12 +99,16 @@ describe("finite conversation model", () => {
 
 describe("private information propagation", () => {
   it("turns speech into reported evidence without leaking omniscient origin metadata", () => {
-    const fabricated = statement({
+    const fabricated: ConversationStatement = {
+      id: asConversationStatementId("fabricated-statement"),
+      subjectId: "cafe-1",
+      predicate: "closing_time",
+      value: "18:00",
+      confidenceBps: 9_000,
       origin: "fabricated",
-      sourceStatementId: undefined,
       claimedSourceEntityId: carol,
       hopCount: 0,
-    });
+    };
     const spoken = message({ statements: [fabricated] });
 
     const effects = deriveListenerEffects(conversation(), spoken, bob);
@@ -157,13 +161,15 @@ describe("private information propagation", () => {
   });
 
   it("applies transmission loss once per retelling and preserves lineage", () => {
-    const source = statement({
+    const source: ConversationStatement = {
       id: asConversationStatementId("source"),
-      origin: "direct",
-      sourceStatementId: undefined,
-      hopCount: 0,
+      subjectId: "cafe-1",
+      predicate: "closing_time",
+      value: "18:00",
       confidenceBps: 10_000,
-    });
+      origin: "direct",
+      hopCount: 0,
+    };
     const retold = retellStatement({
       id: asConversationStatementId("retold"),
       source,
