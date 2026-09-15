@@ -16,6 +16,7 @@
 
 - Cognition: Granite 4.1 3B Q4_K_M through pinned llama.cpp commit `6011c34ce6099646ccdf0d39a61c6e681477c178`.
 - Schema-constrained decision returned `affordance_id=eat_owned_food` for the deterministic hunger fixture.
+- The production `GraniteCognitiveProvider` is exercised against the real llama.cpp + Granite GGUF path in model CI, not only mocked HTTP.
 - Embeddings: Nomic Embed Text v2 MoE Q4_K_M through llama.cpp's OpenAI-compatible embeddings endpoint.
 - `NomicEmbeddingProvider` is exercised against the real llama.cpp + GGUF path in model CI rather than only against mocked HTTP.
 - Query/document prefixing uses `search_query:` and `search_document:` respectively.
@@ -187,21 +188,43 @@
 - [x] Migration `0007_memory.sql`, SQL smoke checks and six real PostgreSQL memory integration cases are green.
 - [x] Model CI verifies the real `NomicEmbeddingProvider -> llama.cpp -> Nomic Q4_K_M GGUF` path at 768 dimensions.
 
+## Ambiguous cognition and durable provenance completed
+
+- [x] `@hobbo/cognition` separates pure context assembly/decision orchestration from PostgreSQL and model adapters.
+- [x] Ambiguous choices require at least two distinct available affordances.
+- [x] Retrieved memories are compacted into a deterministic cognition context; future or duplicate memories are rejected before inference.
+- [x] Mock and replay providers can consume the exact same ambiguous-choice request as Granite.
+- [x] A deterministic fixture demonstrates memory-sensitive choice between helping a friend and ignoring the request.
+- [x] `GraniteCognitiveProvider` calls llama.cpp through `/v1/chat/completions` with temperature zero and strict JSON-schema output.
+- [x] The schema's `affordance_id` enum is generated exclusively from currently available simulation affordances.
+- [x] Provider-side validation still rejects invented affordances, malformed JSON, extra model fields and invalid responses even if the server violates the requested schema.
+- [x] Granite exposes the complete prepared request provenance before inference: provider/model, prompt payload, sampling settings and schema.
+- [x] `DurableCognitionExecutor` persists the prepared request before model inference and appends decision/raw response/token/latency provenance only after inference completes.
+- [x] Cognition request fingerprints are deterministic across object key insertion order while distinguishing bigint values from strings.
+- [x] Fingerprints are not trusted as the sole collision guard: PostgreSQL compares the complete semantic request on every retry.
+- [x] `PostgresCognitionRepository` serializes retries per `(world, request)` and rejects reuse of the same request ID with changed actor/time/correlation/provider/model/payload/affordances/sampling/schema.
+- [x] `start`, `complete` and `fail` are crash/retry safe; exact completion/failure retries return the durable result while conflicting retries are rejected.
+- [x] A process-style restart with a fresh PostgreSQL pool replays a completed decision without another model call.
+- [x] Concurrent resumed workers obey first-durable-completion-wins semantics; a late worker cannot overwrite or convert a completed decision into failure.
+- [x] Provider provenance changing between preparation and response fails closed rather than persisting an unverifiable decision.
+- [x] Model CI verifies the real `GraniteCognitiveProvider -> llama.cpp -> Granite 4.1 3B Q4_K_M` path on CPU.
+
 ### Current CI gate
 
 - [x] TypeScript typecheck green across the workspace.
-- [x] 74/74 non-integration tests green across 14 files.
-- [x] 43/43 PostgreSQL integration tests green across 8 files on PostgreSQL 17.
+- [x] 93/93 non-integration tests green across 17 files.
+- [x] 48/48 PostgreSQL integration tests green across 10 files on PostgreSQL 17.
 - [x] Database migrations `0001` through `0007` plus all SQL smoke checks green.
 - [x] Real Granite cognition and Nomic embedding GGUF smoke tests green through pinned llama.cpp.
-- [x] Real Nomic embedding smoke passes through `NomicEmbeddingProvider`, not only a raw `curl` request.
+- [x] Real Granite cognition smoke passes through `GraniteCognitiveProvider`, not only the raw endpoint request.
+- [x] Real Nomic embedding smoke passes through `NomicEmbeddingProvider`, not only the raw endpoint request.
 
-These gates prove that the deterministic/event-driven kernel can run small physiological populations, recover exactly from worker/process crashes, maintain durable recurring or one-time commitments, conserve money under concurrent spending, model employment and housing with crash-safe exactly-once financial effects, maintain private beliefs plus directional social state without conflating them with objective world truth, and persist/retrieve private agent memories with deterministic semantic ranking. They do **not** yet prove long-term planning, rich conversations/rumor propagation, LLM-driven ambiguous behavior or coherent long-running social lives.
+These gates prove that the deterministic/event-driven kernel can run small physiological populations, recover exactly from worker/process crashes, maintain durable recurring or one-time commitments, conserve money under concurrent spending, model employment and housing with crash-safe exactly-once financial effects, maintain private beliefs plus directional social state without conflating them with objective world truth, persist/retrieve private agent memories with deterministic semantic ranking, and execute bounded ambiguous LLM choices with complete durable provenance and replay. They do **not** yet prove rich conversations/rumor propagation, long-term planning or coherent long-running social lives.
 
 ## Next implementation milestones
 
 - [x] Memory storage/retrieval and Nomic embedding integration.
-- [ ] Ambiguous-choice cognition integration using mock/replay first, Granite second.
+- [x] Ambiguous-choice cognition integration using mock/replay first, Granite second.
 - [ ] Conversation memory and information/rumor propagation.
 - [ ] 20-agent long-running social simulation gate.
 - [ ] Minimal Sprite Forge Blender fixture.
