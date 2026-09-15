@@ -51,6 +51,33 @@ export async function lockWorld(
   return mapWorld(row);
 }
 
+export async function advanceWorldTimeInTransaction(
+  client: PoolClient,
+  worldId: WorldId,
+  target: SimTime,
+): Promise<PersistedWorld> {
+  const current = await lockWorld(client, worldId);
+  if (target < current.currentSimTime) {
+    throw new DomainInvariantError(
+      `World time cannot move backwards (${target} < ${current.currentSimTime})`,
+    );
+  }
+
+  const result = await client.query<WorldRow>(
+    `UPDATE worlds
+        SET current_sim_time = $2,
+            updated_at = now()
+      WHERE id = $1
+      RETURNING id, current_sim_time, next_event_sequence, next_schedule_ordinal`,
+    [worldId, target.toString()],
+  );
+  const row = result.rows[0];
+  if (row === undefined) {
+    throw new DomainInvariantError(`World disappeared during update: ${worldId}`);
+  }
+  return mapWorld(row);
+}
+
 export class PostgresWorldRepository {
   readonly #pool: Pool;
 
@@ -87,27 +114,8 @@ export class PostgresWorldRepository {
   }
 
   async advanceTime(worldId: WorldId, target: SimTime): Promise<PersistedWorld> {
-    return withTransaction(this.#pool, async (client) => {
-      const current = await lockWorld(client, worldId);
-      if (target < current.currentSimTime) {
-        throw new DomainInvariantError(
-          `World time cannot move backwards (${target} < ${current.currentSimTime})`,
-        );
-      }
-
-      const result = await client.query<WorldRow>(
-        `UPDATE worlds
-            SET current_sim_time = $2,
-                updated_at = now()
-          WHERE id = $1
-          RETURNING id, current_sim_time, next_event_sequence, next_schedule_ordinal`,
-        [worldId, target.toString()],
-      );
-      const row = result.rows[0];
-      if (row === undefined) {
-        throw new DomainInvariantError(`World disappeared during update: ${worldId}`);
-      }
-      return mapWorld(row);
-    });
+    return withTransaction(this.#pool, (client) =>
+      advanceWorldTimeInTransaction(client, worldId, target),
+    );
   }
 }
