@@ -1,5 +1,7 @@
 \set ON_ERROR_STOP on
 
+BEGIN;
+
 INSERT INTO worlds (id) VALUES ('social-sql-test');
 
 INSERT INTO perceptions (
@@ -57,8 +59,9 @@ BEGIN
 END
 $$;
 
--- Force the holder/source composite FK to be checked at the statement that
--- follows so the smoke fixture can prove the privacy boundary explicitly.
+-- The holder/source FK is DEFERRABLE so normal domain transactions can create
+-- causally-related rows together. Force immediate checking inside this smoke
+-- transaction to prove a holder cannot cite another observer's evidence.
 SET CONSTRAINTS ALL IMMEDIATE;
 
 DO $$
@@ -107,3 +110,5 @@ BEGIN
   END;
 END
 $$;
+
+COMMIT;
