@@ -26,12 +26,15 @@ export type CognitiveFetch = (
   request: CognitiveHttpRequest,
 ) => Promise<CognitiveHttpResponse>;
 
-export interface CognitiveProviderTrace {
+export interface CognitiveProviderPreparation {
   readonly providerId: string;
   readonly modelId: string;
   readonly requestPayload: unknown;
   readonly samplingConfig: unknown;
   readonly schemaConfig: unknown;
+}
+
+export interface CognitiveProviderTrace extends CognitiveProviderPreparation {
   readonly rawResponse: string;
   readonly promptTokens?: number;
   readonly completionTokens?: number;
@@ -46,6 +49,9 @@ export interface CognitiveProviderRun {
 export interface TraceableCognitiveProvider<TContext = unknown>
   extends CognitiveProvider<TContext> {
   readonly modelId: string;
+  prepareRequest(
+    request: CognitiveRequest<TContext>,
+  ): CognitiveProviderPreparation;
   decideWithTrace(
     request: CognitiveRequest<TContext>,
   ): Promise<CognitiveProviderRun>;
@@ -312,13 +318,9 @@ export class GraniteCognitiveProvider<TContext = unknown>
     this.#nowMs = options.nowMs ?? (() => Date.now());
   }
 
-  async decide(request: CognitiveRequest<TContext>): Promise<CognitiveDecision> {
-    return (await this.decideWithTrace(request)).decision;
-  }
-
-  async decideWithTrace(
+  prepareRequest(
     request: CognitiveRequest<TContext>,
-  ): Promise<CognitiveProviderRun> {
+  ): CognitiveProviderPreparation {
     if (request.affordances.length === 0) {
       throw new DomainInvariantError(
         "Cognitive request must contain at least one affordance",
@@ -343,6 +345,24 @@ export class GraniteCognitiveProvider<TContext = unknown>
       ],
       response_format: schemaConfig,
     };
+
+    return {
+      providerId: this.id,
+      modelId: this.modelId,
+      requestPayload,
+      samplingConfig,
+      schemaConfig,
+    };
+  }
+
+  async decide(request: CognitiveRequest<TContext>): Promise<CognitiveDecision> {
+    return (await this.decideWithTrace(request)).decision;
+  }
+
+  async decideWithTrace(
+    request: CognitiveRequest<TContext>,
+  ): Promise<CognitiveProviderRun> {
+    const preparation = this.prepareRequest(request);
     const headers: Record<string, string> = {
       "Content-Type": "application/json",
     };
@@ -354,7 +374,7 @@ export class GraniteCognitiveProvider<TContext = unknown>
     const response = await this.#fetch(`${this.#baseUrl}/v1/chat/completions`, {
       method: "POST",
       headers,
-      body: jsonStringify(requestPayload, "Cognition request"),
+      body: jsonStringify(preparation.requestPayload, "Cognition request"),
     });
     const finishedAt = this.#nowMs();
 
@@ -394,11 +414,7 @@ export class GraniteCognitiveProvider<TContext = unknown>
     return {
       decision,
       trace: {
-        providerId: this.id,
-        modelId: this.modelId,
-        requestPayload,
-        samplingConfig,
-        schemaConfig,
+        ...preparation,
         rawResponse: jsonStringify(payload, "Cognition response"),
         ...usage,
         latencyMs,
