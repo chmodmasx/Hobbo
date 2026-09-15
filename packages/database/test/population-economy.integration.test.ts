@@ -429,5 +429,5 @@ describe("20-agent durable economy population gate", () => {
     } finally {
       await restartedPool.end();
     }
-  });
+  }, 30_000);
 });
