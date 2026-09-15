@@ -4,11 +4,13 @@ import {
   asRoutineId,
   type EmploymentId,
   type EntityId,
+  type HousingUnitId,
   type LedgerAccountId,
   type LedgerTransactionId,
   type RoutineId,
   type SimDuration,
   type SimTime,
+  type TenancyId,
   type WorldId,
 } from "@hobbo/domain";
 
@@ -64,6 +66,34 @@ export interface EmploymentTerms {
 export interface EmploymentShiftPayload {
   readonly employmentId: string;
   readonly employerId: string;
+}
+
+export interface HousingUnitDefinition {
+  readonly id: HousingUnitId;
+  readonly worldId: WorldId;
+  readonly ownerId: EntityId;
+  readonly label?: string;
+}
+
+export interface TenancyTerms {
+  readonly id: TenancyId;
+  readonly worldId: WorldId;
+  readonly housingUnitId: HousingUnitId;
+  readonly landlordId: EntityId;
+  readonly tenantId: EntityId;
+  readonly landlordAccountId: LedgerAccountId;
+  readonly tenantAccountId: LedgerAccountId;
+  readonly currency: string;
+  readonly rentPerPeriod: bigint;
+  readonly rentPeriod: SimDuration;
+  readonly rentPhase: SimDuration;
+  readonly startsAt: SimTime;
+}
+
+export interface RentDuePayload {
+  readonly tenancyId: string;
+  readonly housingUnitId: string;
+  readonly landlordId: string;
 }
 
 export function normalizeCurrencyCode(currency: string): string {
@@ -191,5 +221,71 @@ export function salaryTransactionId(
 ): LedgerTransactionId {
   return asLedgerTransactionId(
     `salary:${encodeURIComponent(String(employmentId))}:${encodeURIComponent(commitmentId)}`,
+  );
+}
+
+export function validateHousingUnitDefinition(unit: HousingUnitDefinition): void {
+  if (String(unit.id).length === 0) {
+    throw new DomainInvariantError("Housing unit id cannot be empty");
+  }
+  if (String(unit.ownerId).length === 0) {
+    throw new DomainInvariantError("Housing unit owner cannot be empty");
+  }
+  if (unit.label !== undefined && unit.label.trim().length === 0) {
+    throw new DomainInvariantError("Housing unit label cannot be blank");
+  }
+}
+
+export function validateTenancyTerms(terms: TenancyTerms): string {
+  if (String(terms.id).length === 0) {
+    throw new DomainInvariantError("Tenancy id cannot be empty");
+  }
+  if (String(terms.housingUnitId).length === 0) {
+    throw new DomainInvariantError("Tenancy housing unit cannot be empty");
+  }
+  if (String(terms.landlordId).length === 0 || String(terms.tenantId).length === 0) {
+    throw new DomainInvariantError("Tenancy parties cannot be empty");
+  }
+  if (terms.landlordId === terms.tenantId) {
+    throw new DomainInvariantError("Landlord and tenant must differ");
+  }
+  if (terms.landlordAccountId === terms.tenantAccountId) {
+    throw new DomainInvariantError("Landlord and tenant ledger accounts must differ");
+  }
+  assertPositiveMinorUnits(terms.rentPerPeriod);
+  if (terms.rentPeriod <= 0n) {
+    throw new DomainInvariantError("Tenancy rent period must be greater than zero");
+  }
+  if (terms.rentPhase < 0n || terms.rentPhase >= terms.rentPeriod) {
+    throw new DomainInvariantError(
+      `Tenancy rent phase must be within [0, period), received phase=${terms.rentPhase} period=${terms.rentPeriod}`,
+    );
+  }
+  return normalizeCurrencyCode(terms.currency);
+}
+
+export function rentRoutineIdForTenancy(tenancyId: TenancyId): RoutineId {
+  if (String(tenancyId).length === 0) {
+    throw new DomainInvariantError("Tenancy id cannot be empty");
+  }
+  return asRoutineId(`tenancy:${encodeURIComponent(String(tenancyId))}:rent`);
+}
+
+export function rentIdempotencyKey(
+  tenancyId: TenancyId,
+  commitmentId: string,
+): string {
+  if (commitmentId.length === 0) {
+    throw new DomainInvariantError("Rent commitment id cannot be empty");
+  }
+  return `rent:${encodeURIComponent(String(tenancyId))}:${encodeURIComponent(commitmentId)}`;
+}
+
+export function rentTransactionId(
+  tenancyId: TenancyId,
+  commitmentId: string,
+): LedgerTransactionId {
+  return asLedgerTransactionId(
+    `rent:${encodeURIComponent(String(tenancyId))}:${encodeURIComponent(commitmentId)}`,
   );
 }
