@@ -85,11 +85,19 @@ jobs:
           sudo apt-get install -y --no-install-recommends postgresql-client
           pnpm install --no-frozen-lockfile
 
-      - name: Apply core migration
-        run: psql -v ON_ERROR_STOP=1 -f packages/database/migrations/0001_core.sql
+      - name: Apply database migrations
+        run: |
+          for migration in packages/database/migrations/*.sql; do
+            echo "Applying ${migration}"
+            psql -v ON_ERROR_STOP=1 -f "${migration}"
+          done
 
       - name: Run SQL schema smoke checks
-        run: psql -v ON_ERROR_STOP=1 -f packages/database/test/0001_core.sql
+        run: |
+          for check in packages/database/test/*.sql; do
+            echo "Checking ${check}"
+            psql -v ON_ERROR_STOP=1 -f "${check}"
+          done
 
       - name: Run repository integration tests
         run: pnpm --filter @hobbo/database test:integration
