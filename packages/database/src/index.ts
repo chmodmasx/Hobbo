@@ -6,3 +6,4 @@ export * from "./simulation-step-repository.ts";
 export * from "./cognition-repository.ts";
 export * from "./routine-repository.ts";
 export * from "./ledger-repository.ts";
+export * from "./employment-repository.ts";
