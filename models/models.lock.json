@@ -1,0 +1,29 @@
+{
+  "schemaVersion": 1,
+  "models": {
+    "cognition": {
+      "id": "granite-4.1-3b-q4_k_m",
+      "source": "huggingface",
+      "repo": "ibm-granite/granite-4.1-3b-GGUF",
+      "revision": "main",
+      "file": "granite-4.1-3b-Q4_K_M.gguf",
+      "url": "https://huggingface.co/ibm-granite/granite-4.1-3b-GGUF/resolve/main/granite-4.1-3b-Q4_K_M.gguf?download=true",
+      "sha256": "662b0626cd58f443baea23559b469df6576a81d349649c59413b36a9fb32eb29",
+      "quantization": "Q4_K_M",
+      "license": "Apache-2.0",
+      "ciAlias": "hobbo-cognition"
+    },
+    "embeddings": {
+      "id": "nomic-embed-text-v2-moe-q4_k_m",
+      "source": "huggingface",
+      "repo": "nomic-ai/nomic-embed-text-v2-moe-GGUF",
+      "revision": "ffbcf4c99e5d617dda10ec8c0e9f75754b0cbb80",
+      "file": "nomic-embed-text-v2-moe.Q4_K_M.gguf",
+      "url": "https://huggingface.co/nomic-ai/nomic-embed-text-v2-moe-GGUF/resolve/ffbcf4c99e5d617dda10ec8c0e9f75754b0cbb80/nomic-embed-text-v2-moe.Q4_K_M.gguf?download=true",
+      "sha256": "b5fb2811647b8ef461519a68a3bf67014a84a66a130c8a2af9413ff9f06d3f22",
+      "quantization": "Q4_K_M",
+      "license": "Apache-2.0",
+      "ciAlias": "hobbo-embeddings"
+    }
+  }
+}
