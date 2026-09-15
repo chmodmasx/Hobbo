@@ -209,24 +209,51 @@
 - [x] Provider provenance changing between preparation and response fails closed rather than persisting an unverifiable decision.
 - [x] Model CI verifies the real `GraniteCognitiveProvider -> llama.cpp -> Granite 4.1 3B Q4_K_M` path on CPU.
 
+## Durable conversations and rumor propagation completed
+
+- [x] `@hobbo/conversation` defines finite conversations with explicit participants, turn ordinals and a hard `maxTurns` budget.
+- [x] Conversation messages are append-only and the final allowed turn closes the conversation automatically without invalidating its pending delivery effects.
+- [x] Structured statements carry private confidence plus explicit `direct`, `reported`, `inferred` or `fabricated` origin for internal provenance.
+- [x] Retellings keep a durable source-statement lineage and hop count while allowing the claim value to mutate between speakers.
+- [x] A listener receives what was said as `reported` evidence; merely hearing a statement never changes objective world truth.
+- [x] The internal fact that a speaker fabricated a claim is deliberately hidden from listeners unless dialogue itself reveals it.
+- [x] Speaker memories may retain private origin/lineage metadata, so an agent can remember that it invented a statement without granting that knowledge to listeners.
+- [x] Listener confidence combines statement confidence, directional trust in the speaker and an explicit transmission-retention factor.
+- [x] The same spoken claim can therefore become a belief for one listener while remaining only low-confidence evidence for another.
+- [x] Contradictory perceptions remain append-only evidence while the listener's private current belief may revise forward in simulation time.
+- [x] Belief revision preserves the original `learnedAt` timestamp and rejects stale/same-time rewrites.
+- [x] Each listener gets a distinct private social memory; the speaker gets a separate first-person memory of what they said.
+- [x] Conversation memories can be embedded through a structural embedding interface; the persistence layer does not depend directly on llama.cpp.
+- [x] Conversation messages create deterministic bidirectional familiarity effects while preserving pre-existing trust and other relationship dimensions.
+- [x] PostgreSQL persists conversations, participants, messages, structured statement lineage and per-listener durable delivery records.
+- [x] Message ordinal allocation is serialized through the conversation row lock; concurrent appends cannot allocate the same turn.
+- [x] Exact message retries are idempotent while semantic reuse of a message identity with changed content is rejected.
+- [x] Delivery workers use `FOR UPDATE SKIP LOCKED`, but only the oldest pending/processing delivery for each listener is claimable, preserving each agent's causal information order while allowing different agents to process in parallel.
+- [x] Stale delivery leases can be requeued after a worker/process crash.
+- [x] Conversation side effects use deterministic perception, memory and relationship-effect identities, so a crash after partial materialization converges without duplicate social state after restart.
+- [x] A fresh PostgreSQL pool test replays a partially applied conversation delivery and proves exactly one listener perception, one listener memory, one speaker memory and one familiarity effect per direction.
+- [x] Migration `0008_conversations.sql`, SQL smoke checks and ten conversation-specific PostgreSQL integration cases are green.
+
 ### Current CI gate
 
 - [x] TypeScript typecheck green across the workspace.
-- [x] 93/93 non-integration tests green across 17 files.
-- [x] 48/48 PostgreSQL integration tests green across 10 files on PostgreSQL 17.
-- [x] Database migrations `0001` through `0007` plus all SQL smoke checks green.
+- [x] 100/100 non-integration tests green across 18 files.
+- [x] 58/58 PostgreSQL integration tests green across 13 files on PostgreSQL 17.
+- [x] Database migrations `0001` through `0008` plus all SQL smoke checks green.
 - [x] Real Granite cognition and Nomic embedding GGUF smoke tests green through pinned llama.cpp.
 - [x] Real Granite cognition smoke passes through `GraniteCognitiveProvider`, not only the raw endpoint request.
 - [x] Real Nomic embedding smoke passes through `NomicEmbeddingProvider`, not only the raw endpoint request.
 
-These gates prove that the deterministic/event-driven kernel can run small physiological populations, recover exactly from worker/process crashes, maintain durable recurring or one-time commitments, conserve money under concurrent spending, model employment and housing with crash-safe exactly-once financial effects, maintain private beliefs plus directional social state without conflating them with objective world truth, persist/retrieve private agent memories with deterministic semantic ranking, and execute bounded ambiguous LLM choices with complete durable provenance and replay. They do **not** yet prove rich conversations/rumor propagation, long-term planning or coherent long-running social lives.
+These gates prove that the deterministic/event-driven kernel can run small physiological populations, recover exactly from worker/process crashes, maintain durable recurring or one-time commitments, conserve money under concurrent spending, model employment and housing with crash-safe exactly-once financial effects, maintain private beliefs plus directional social state without conflating them with objective world truth, persist/retrieve private agent memories with deterministic semantic ranking, execute bounded ambiguous LLM choices with complete durable provenance and replay, and propagate conversational information/rumors into listener-specific evidence, beliefs, memories and relationships without leaking internal truth metadata. They do **not** yet prove sustained LLM-generated natural dialogue, long-term planning or coherent long-running social lives across the full 20-agent population.
 
 ## Next implementation milestones
 
 - [x] Memory storage/retrieval and Nomic embedding integration.
 - [x] Ambiguous-choice cognition integration using mock/replay first, Granite second.
-- [ ] Conversation memory and information/rumor propagation.
+- [x] Conversation memory and information/rumor propagation.
 - [ ] 20-agent long-running social simulation gate.
+- [ ] Long-term goals/plans and reflection over multi-day histories.
+- [ ] Sustained LLM-generated dialogue using the durable conversation substrate.
 - [ ] Minimal Sprite Forge Blender fixture.
 
 The project should not begin large-scale visual/content work before the long-running social simulation gates are met.
