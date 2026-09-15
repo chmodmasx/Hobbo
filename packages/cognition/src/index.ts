@@ -141,3 +141,5 @@ export class AmbiguousChoiceEngine<TState = unknown> {
     return this.#provider.decide(assembleAmbiguousChoiceRequest(input));
   }
 }
+
+export * from "./persisted.ts";
