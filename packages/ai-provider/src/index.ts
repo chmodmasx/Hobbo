@@ -363,8 +363,8 @@ export class NomicEmbeddingProvider implements EmbeddingProvider {
   readonly id: string;
   readonly modelId: string;
   readonly #baseUrl: string;
-  readonly #apiKey?: string;
-  readonly #expectedDimensions?: number;
+  readonly #apiKey: string | undefined;
+  readonly #expectedDimensions: number | undefined;
   readonly #fetch: EmbeddingFetch;
 
   constructor(options: NomicEmbeddingProviderOptions) {
