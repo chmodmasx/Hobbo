@@ -124,6 +124,9 @@ BEGIN
       RAISE EXCEPTION 'posted ledger transactions are immutable'
         USING ERRCODE = '55000';
     END IF;
+    IF TG_OP = 'DELETE' THEN
+      RETURN OLD;
+    END IF;
     RETURN NEW;
   END IF;
 
@@ -138,7 +141,10 @@ BEGIN
       USING ERRCODE = '55000';
   END IF;
 
-  RETURN COALESCE(NEW, OLD);
+  IF TG_OP = 'DELETE' THEN
+    RETURN OLD;
+  END IF;
+  RETURN NEW;
 END;
 $$;
 
