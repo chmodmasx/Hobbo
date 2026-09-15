@@ -20,17 +20,38 @@
 - Embedding dimensionality observed in CI: 768.
 - Model weights and the pinned llama.cpp CPU build are restored from GitHub Actions cache on subsequent runs.
 
+## Deterministic core completed
+
+- [x] Domain types package.
+- [x] Deterministic bigint world clock with no wall-clock dependency.
+- [x] Stable scheduled-event priority queue and deterministic scheduler.
+- [x] Domain-event envelope, append-only in-memory log and replay primitives.
+- [x] Shared action registry/validator for player, rule, utility, LLM and replay origins.
+- [x] Deterministic mock cognitive provider.
+- [x] Replay cognitive provider that never silently re-infers missing decisions.
+- [x] Initial PostgreSQL migration for worlds, domain events, scheduled events and cognition runs.
+- [x] PostgreSQL migration smoke test on a real PostgreSQL 17 service in GitHub Actions.
+- [x] Strict TypeScript core CI green with 14 unit tests.
+
+### Core invariants currently enforced
+
+- Simulation time cannot move backwards.
+- Events scheduled for the same simulation time execute in stable insertion order.
+- Handlers may schedule additional work at the current simulation time without reordering earlier queued work.
+- Event history uses contiguous sequence numbers and nondecreasing simulation time.
+- Duplicate event and scheduled-event identifiers are rejected.
+- Player and AI action requests pass through the same action validation rules.
+- Cognitive providers cannot invent affordances not supplied by the simulation.
+- Replay cognition fails on missing or no-longer-valid recorded decisions rather than calling a model.
+- PostgreSQL rejects negative simulation time and invalid scheduler states.
+
 ## Next implementation milestones
 
-- [ ] Domain types package.
-- [ ] Deterministic world clock.
-- [ ] Scheduled-event queue.
-- [ ] Domain-event envelope and replay primitives.
-- [ ] Action registry/validator.
-- [ ] Mock cognitive provider.
-- [ ] Initial PostgreSQL schema/migrations.
 - [ ] Property-based world invariants.
+- [ ] Minimal physiology/food/inventory domain slice.
 - [ ] Headless 20-agent simulation fixture.
+- [ ] Deterministic seed/random stream abstraction.
+- [ ] Persistence repositories/transactions over the core schema.
 - [ ] Minimal Sprite Forge Blender fixture.
 
 The project should not begin large-scale visual/content work before the headless simulation gates are met.
