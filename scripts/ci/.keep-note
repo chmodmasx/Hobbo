@@ -1,1 +1,0 @@
-CI scripts are intentionally invoked through bash so executable mode is not required by the GitHub contents API.
