@@ -136,6 +136,8 @@ class FakeStore implements CognitionRunStore {
     status: "running",
     providerId: "granite-openai-compatible",
   };
+  getResult: DurableCognitionRun | undefined;
+  completeError: Error | undefined;
 
   async enqueue(input: Parameters<CognitionRunStore["enqueue"]>[0]) {
     this.events.push("enqueue");
@@ -155,6 +157,7 @@ class FakeStore implements CognitionRunStore {
   ) {
     this.events.push("complete");
     this.completed = output;
+    if (this.completeError !== undefined) throw this.completeError;
     return {
       status: "completed" as const,
       providerId: "granite-openai-compatible",
@@ -174,6 +177,11 @@ class FakeStore implements CognitionRunStore {
       providerId: "granite-openai-compatible",
       errorMessage,
     };
+  }
+
+  async get() {
+    this.events.push("get");
+    return this.getResult;
   }
 }
 
@@ -257,7 +265,7 @@ describe("DurableCognitionExecutor", () => {
     await expect(executor.decide(worldId, request())).rejects.toThrow(
       /llama\.cpp unavailable/i,
     );
-    expect(store.events).toEqual(["enqueue", "start", "fail"]);
+    expect(store.events).toEqual(["enqueue", "start", "get", "fail"]);
     expect(store.failedMessage).toBe("llama.cpp unavailable");
   });
 
@@ -269,7 +277,30 @@ describe("DurableCognitionExecutor", () => {
     await expect(executor.decide(worldId, request())).rejects.toThrow(
       /changed request provenance/i,
     );
-    expect(store.events).toEqual(["enqueue", "start", "fail"]);
+    expect(store.events).toEqual(["enqueue", "start", "get", "fail"]);
     expect(store.completed).toBeUndefined();
+  });
+
+  it("returns the first durable completion when another resumed worker wins the race", async () => {
+    const store = new FakeStore();
+    store.completeError = new Error("conflicting retry output");
+    store.getResult = {
+      status: "completed",
+      providerId: "granite-openai-compatible",
+      decision: {
+        affordance_id: "ignore_friend",
+        intent: "First worker already completed",
+      },
+    };
+    const provider = new FakeProvider();
+    const executor = new DurableCognitionExecutor(store, provider);
+
+    const decision = await executor.decide(worldId, request());
+
+    expect(decision.affordanceId).toBe(ignoreId);
+    expect(decision.intent).toBe("First worker already completed");
+    expect(decision.replayed).toBe(true);
+    expect(store.events).toEqual(["enqueue", "start", "complete", "get"]);
+    expect(store.failedMessage).toBeUndefined();
   });
 });
