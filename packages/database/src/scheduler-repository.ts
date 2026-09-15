@@ -214,14 +214,24 @@ export class PostgresScheduledEventRepository {
 
     return withTransaction(this.#pool, async (client) => {
       const result = await client.query<ScheduledEventRow>(
-        `WITH due AS (
-           SELECT world_id, id, due_at, ordinal
+        `WITH frontier AS (
+           SELECT min(due_at) AS due_at
              FROM scheduled_events
             WHERE world_id = $1
-              AND status = 'pending'
+              AND status IN ('pending', 'processing')
               AND due_at <= $2
-            ORDER BY due_at ASC, ordinal ASC
-            FOR UPDATE SKIP LOCKED
+         ), due AS (
+           SELECT scheduled.world_id,
+                  scheduled.id,
+                  scheduled.due_at,
+                  scheduled.ordinal
+             FROM scheduled_events AS scheduled
+             CROSS JOIN frontier
+            WHERE scheduled.world_id = $1
+              AND scheduled.status = 'pending'
+              AND scheduled.due_at = frontier.due_at
+            ORDER BY scheduled.ordinal ASC
+            FOR UPDATE OF scheduled SKIP LOCKED
             LIMIT $4
          ), updated AS (
            UPDATE scheduled_events AS scheduled
@@ -242,7 +252,7 @@ export class PostgresScheduledEventRepository {
            JOIN due
              ON due.world_id = updated.world_id
             AND due.id = updated.id
-          ORDER BY due.due_at ASC, due.ordinal ASC`,
+          ORDER BY due.ordinal ASC`,
         [worldId, through.toString(), workerId, limit],
       );
       return result.rows.map(mapScheduledEvent);
