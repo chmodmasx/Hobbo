@@ -17,7 +17,9 @@
 - Cognition: Granite 4.1 3B Q4_K_M through pinned llama.cpp commit `6011c34ce6099646ccdf0d39a61c6e681477c178`.
 - Schema-constrained decision returned `affordance_id=eat_owned_food` for the deterministic hunger fixture.
 - Embeddings: Nomic Embed Text v2 MoE Q4_K_M through llama.cpp's OpenAI-compatible embeddings endpoint.
-- Embedding dimensionality observed in CI: 768.
+- `NomicEmbeddingProvider` is exercised against the real llama.cpp + GGUF path in model CI rather than only against mocked HTTP.
+- Query/document prefixing uses `search_query:` and `search_document:` respectively.
+- Embedding dimensionality observed and enforced in CI: 768.
 - Model weights and the pinned llama.cpp CPU build are restored from GitHub Actions cache on subsequent runs.
 
 ## Deterministic core completed
@@ -165,18 +167,40 @@
 - [x] Effects older than the persisted relationship state are rejected and never recorded.
 - [x] Migration `0006_social_beliefs.sql`, SQL smoke checks and seven real PostgreSQL social integration cases are green.
 
+## Durable memory and semantic retrieval completed
+
+- [x] `@hobbo/memory` defines episodic, semantic, social, emotional, commitment, reflection and autobiographical memory categories.
+- [x] Memory importance and emotional strength use bounded integer basis points rather than floating-point policy state.
+- [x] Exact retrieval combines semantic similarity, recency, importance and emotional strength with explicit configurable weights.
+- [x] Retrieval supports category and related-entity filters with stable deterministic tie-breaking.
+- [x] Cosine similarity uses numerically stable norms and remains valid for subnormal finite components found by property testing.
+- [x] Memories are append-oriented durable records and cannot be rewritten after persistence.
+- [x] Embeddings are stored separately from memory content so the same memory can be re-embedded without rewriting history.
+- [x] Multiple embedding models may coexist for one memory under `(world, memory, model)` identity.
+- [x] Exact memory and embedding retries are idempotent; semantic reuse of an identity with changed content/vector is rejected.
+- [x] PostgreSQL rejects empty, zero, non-finite and dimension-mismatched embeddings.
+- [x] `PostgresMemoryRepository` filters by world, owner, model and simulation time before exact in-process ranking.
+- [x] Retrieval never leaks another agent's private memories into the requesting agent's candidate set.
+- [x] Re-embedding with a different model can change retrieval order without mutating the original memory.
+- [x] Nomic query/document prefixes are applied automatically by `NomicEmbeddingProvider`.
+- [x] The provider validates HTTP errors, response counts, response indices, dimensions and finite non-zero vectors.
+- [x] Migration `0007_memory.sql`, SQL smoke checks and six real PostgreSQL memory integration cases are green.
+- [x] Model CI verifies the real `NomicEmbeddingProvider -> llama.cpp -> Nomic Q4_K_M GGUF` path at 768 dimensions.
+
 ### Current CI gate
 
 - [x] TypeScript typecheck green across the workspace.
-- [x] 60/60 non-integration tests green across 13 files.
-- [x] 37/37 PostgreSQL integration tests green across 7 files on PostgreSQL 17.
-- [x] Database migrations `0001` through `0006` plus all SQL smoke checks green.
+- [x] 74/74 non-integration tests green across 14 files.
+- [x] 43/43 PostgreSQL integration tests green across 8 files on PostgreSQL 17.
+- [x] Database migrations `0001` through `0007` plus all SQL smoke checks green.
+- [x] Real Granite cognition and Nomic embedding GGUF smoke tests green through pinned llama.cpp.
+- [x] Real Nomic embedding smoke passes through `NomicEmbeddingProvider`, not only a raw `curl` request.
 
-These gates prove that the deterministic/event-driven kernel can run small physiological populations, recover exactly from worker/process crashes, maintain durable recurring or one-time commitments, conserve money under concurrent spending, model employment and housing with crash-safe exactly-once financial effects, and maintain private beliefs plus directional social state without conflating them with objective world truth. They do **not** yet prove durable autobiographical memory, semantic retrieval, long-term planning, rich conversations/rumor propagation, LLM-driven ambiguous behavior or coherent long-running social lives.
+These gates prove that the deterministic/event-driven kernel can run small physiological populations, recover exactly from worker/process crashes, maintain durable recurring or one-time commitments, conserve money under concurrent spending, model employment and housing with crash-safe exactly-once financial effects, maintain private beliefs plus directional social state without conflating them with objective world truth, and persist/retrieve private agent memories with deterministic semantic ranking. They do **not** yet prove long-term planning, rich conversations/rumor propagation, LLM-driven ambiguous behavior or coherent long-running social lives.
 
 ## Next implementation milestones
 
-- [ ] Memory storage/retrieval and Nomic embedding integration.
+- [x] Memory storage/retrieval and Nomic embedding integration.
 - [ ] Ambiguous-choice cognition integration using mock/replay first, Granite second.
 - [ ] Conversation memory and information/rumor propagation.
 - [ ] 20-agent long-running social simulation gate.
