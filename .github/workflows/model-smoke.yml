@@ -1,0 +1,91 @@
+name: Model smoke tests
+
+on:
+  workflow_dispatch:
+  push:
+    branches: [main]
+    paths:
+      - '.github/workflows/model-smoke.yml'
+      - 'models/**'
+      - 'scripts/ci/**'
+  pull_request:
+    paths:
+      - '.github/workflows/model-smoke.yml'
+      - 'models/**'
+      - 'scripts/ci/**'
+
+permissions:
+  contents: read
+
+concurrency:
+  group: model-smoke-${{ github.ref }}
+  cancel-in-progress: true
+
+env:
+  HOBBO_MODEL_DIR: ${{ github.workspace }}/.cache/models
+  LLAMA_CPP_DIR: ${{ github.workspace }}/.cache/llama.cpp
+
+jobs:
+  model-smoke:
+    name: Granite cognition + Nomic embeddings
+    runs-on: ubuntu-latest
+    timeout-minutes: 60
+
+    steps:
+      - name: Checkout Hobbo
+        uses: actions/checkout@v4
+
+      - name: Install build/runtime dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y --no-install-recommends \
+            build-essential \
+            cmake \
+            curl \
+            jq \
+            ninja-build
+
+      - name: Restore GGUF cache
+        id: model-cache
+        uses: actions/cache@v4
+        with:
+          path: .cache/models
+          key: hobbo-models-${{ runner.os }}-${{ hashFiles('models/models.lock.json') }}
+          restore-keys: |
+            hobbo-models-${{ runner.os }}-
+
+      - name: Download and verify baseline GGUFs
+        run: bash scripts/ci/download-models.sh all
+
+      - name: Clone llama.cpp
+        run: |
+          rm -rf "$LLAMA_CPP_DIR"
+          git clone --depth 1 https://github.com/ggml-org/llama.cpp.git "$LLAMA_CPP_DIR"
+          git -C "$LLAMA_CPP_DIR" rev-parse HEAD | tee "$RUNNER_TEMP/llama-cpp-commit.txt"
+
+      - name: Build llama-server for CPU
+        run: |
+          cmake \
+            -S "$LLAMA_CPP_DIR" \
+            -B "$LLAMA_CPP_DIR/build" \
+            -G Ninja \
+            -DCMAKE_BUILD_TYPE=Release \
+            -DGGML_NATIVE=OFF \
+            -DLLAMA_CURL=OFF
+          cmake --build "$LLAMA_CPP_DIR/build" --target llama-server --parallel 4
+
+      - name: Show test dependency versions
+        run: |
+          echo "llama.cpp commit: $(cat "$RUNNER_TEMP/llama-cpp-commit.txt")"
+          "$LLAMA_CPP_DIR/build/bin/llama-server" --version
+          jq -r '.models | to_entries[] | "\(.key): \(.value.file) [\(.value.quantization)]"' models/models.lock.json
+
+      - name: Smoke test Granite cognition
+        env:
+          LLAMA_SERVER: ${{ github.workspace }}/.cache/llama.cpp/build/bin/llama-server
+        run: bash scripts/ci/smoke-granite.sh
+
+      - name: Smoke test Nomic embeddings
+        env:
+          LLAMA_SERVER: ${{ github.workspace }}/.cache/llama.cpp/build/bin/llama-server
+        run: bash scripts/ci/smoke-nomic.sh
