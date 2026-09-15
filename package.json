@@ -6,6 +6,13 @@
   "scripts": {
     "models:download": "bash scripts/ci/download-models.sh all",
     "smoke:granite": "bash scripts/ci/smoke-granite.sh",
-    "smoke:nomic": "bash scripts/ci/smoke-nomic.sh"
+    "smoke:nomic": "bash scripts/ci/smoke-nomic.sh",
+    "typecheck": "pnpm -r typecheck",
+    "test": "vitest run",
+    "test:watch": "vitest"
+  },
+  "devDependencies": {
+    "typescript": "^5.9.2",
+    "vitest": "^3.2.4"
   }
 }
