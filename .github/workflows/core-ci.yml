@@ -46,3 +46,45 @@ jobs:
 
       - name: Run unit tests
         run: pnpm test
+
+  database:
+    name: PostgreSQL migration smoke test
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+
+    services:
+      postgres:
+        image: postgres:17-alpine
+        env:
+          POSTGRES_USER: hobbo
+          POSTGRES_PASSWORD: hobbo
+          POSTGRES_DB: hobbo
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U hobbo -d hobbo"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 10
+
+    env:
+      PGHOST: 127.0.0.1
+      PGPORT: 5432
+      PGUSER: hobbo
+      PGPASSWORD: hobbo
+      PGDATABASE: hobbo
+
+    steps:
+      - name: Checkout Hobbo
+        uses: actions/checkout@v4
+
+      - name: Install PostgreSQL client
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y --no-install-recommends postgresql-client
+
+      - name: Apply core migration
+        run: psql -v ON_ERROR_STOP=1 -f packages/database/migrations/0001_core.sql
+
+      - name: Run persistence smoke checks
+        run: psql -v ON_ERROR_STOP=1 -f packages/database/test/0001_core.sql
