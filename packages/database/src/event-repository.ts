@@ -12,6 +12,7 @@ import {
   type WorldId,
 } from "@hobbo/domain";
 import type { Pool, PoolClient, QueryResultRow } from "pg";
+import { toJsonParameter } from "./json.ts";
 import { withTransaction } from "./transaction.ts";
 import { lockWorld } from "./world-repository.ts";
 
@@ -90,7 +91,7 @@ export async function appendDomainEventsInTransaction(
         draft.type,
         draft.actorId ?? null,
         draft.targetIds === undefined ? null : [...draft.targetIds],
-        draft.payload,
+        toJsonParameter(draft.payload, `event ${draft.id} payload`),
         draft.causationId ?? null,
         draft.correlationId,
       ],
