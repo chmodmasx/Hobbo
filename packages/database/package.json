@@ -8,7 +8,7 @@
   },
   "scripts": {
     "typecheck": "tsc -p tsconfig.json",
-    "test:integration": "vitest run test/repositories.integration.test.ts"
+    "test:integration": "vitest run test/*.integration.test.ts"
   },
   "dependencies": {
     "@hobbo/domain": "workspace:*",
