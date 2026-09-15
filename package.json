@@ -1,0 +1,11 @@
+{
+  "name": "hobbo",
+  "version": "0.0.0",
+  "private": true,
+  "packageManager": "pnpm@10.15.1",
+  "scripts": {
+    "models:download": "bash scripts/ci/download-models.sh all",
+    "smoke:granite": "bash scripts/ci/smoke-granite.sh",
+    "smoke:nomic": "bash scripts/ci/smoke-nomic.sh"
+  }
+}
