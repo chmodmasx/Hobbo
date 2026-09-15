@@ -11,6 +11,7 @@
     "test:integration": "vitest run test/*.integration.test.ts --maxWorkers=1 --no-file-parallelism"
   },
   "dependencies": {
+    "@hobbo/conversation": "workspace:*",
     "@hobbo/domain": "workspace:*",
     "@hobbo/economy": "workspace:*",
     "@hobbo/memory": "workspace:*",
