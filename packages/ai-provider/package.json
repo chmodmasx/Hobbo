@@ -4,7 +4,8 @@
   "private": true,
   "type": "module",
   "exports": {
-    ".": "./src/index.ts"
+    ".": "./src/index.ts",
+    "./granite": "./src/granite.ts"
   },
   "scripts": {
     "typecheck": "tsc -p tsconfig.json"
