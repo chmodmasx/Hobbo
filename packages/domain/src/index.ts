@@ -8,6 +8,7 @@ export type CorrelationId = Brand<string, "CorrelationId">;
 export type ScheduledEventId = Brand<string, "ScheduledEventId">;
 export type ActionId = Brand<string, "ActionId">;
 export type AffordanceId = Brand<string, "AffordanceId">;
+export type CognitionRequestId = Brand<string, "CognitionRequestId">;
 
 export type SimTime = Brand<bigint, "SimTime">;
 export type SimDuration = Brand<bigint, "SimDuration">;
@@ -155,4 +156,8 @@ export function asActionId(value: string): ActionId {
 
 export function asAffordanceId(value: string): AffordanceId {
   return value as AffordanceId;
+}
+
+export function asCognitionRequestId(value: string): CognitionRequestId {
+  return value as CognitionRequestId;
 }
