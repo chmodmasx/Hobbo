@@ -98,6 +98,7 @@
 - [x] Partial unique index guarantees at most one `planned` commitment per recurring routine.
 - [x] Concurrent `materializeNext()` calls converge on the same concrete occurrence.
 - [x] Fulfillment, domain-event append, scheduled-event completion and next-occurrence materialization are transactional.
+- [x] Commitments may be fulfilled after their due time but never before it; recurring schedules stay anchored to the original phase rather than drifting after a late fulfillment.
 - [x] Disabling a routine allows the already-materialized occurrence to resolve without generating another.
 - [x] Destructive PostgreSQL integration fixtures are serialized at file level while explicit concurrency tests remain concurrent inside each test.
 
@@ -133,21 +134,51 @@
 - [x] Payroll account currency mismatch aborts contract creation without leaving a routine or commitment behind.
 - [x] Migration `0004_employment.sql`, SQL smoke checks and five real PostgreSQL employment integration cases are green.
 
+## Housing, tenancy and crash-safe rent completed
+
+- [x] Housing units are persistent world entities separate from tenancy contracts.
+- [x] Housing ownership is explicit and tenancy landlords must match the unit owner.
+- [x] PostgreSQL guarantees at most one active tenancy per housing unit.
+- [x] Tenancy creation, rent routine creation and first concrete rent commitment commit atomically.
+- [x] Rent uses the generic recurring commitment/scheduler path rather than introducing another scheduler.
+- [x] Rent payment is posted before commitment fulfillment, so insufficient funds never falsely mark an obligation as fulfilled.
+- [x] Overdue rent may be settled after its due time without shifting the periodic rent phase.
+- [x] A worker that does not own the claimed scheduler job is rejected before any money moves.
+- [x] A crash after rent payment but before fulfillment can recover from a fresh PostgreSQL pool; ledger idempotency prevents a second charge.
+- [x] Tenant insolvency leaves the rent commitment planned and creates no partial rent transfer; later funding allows the same obligation to settle.
+- [x] Migration `0005_housing.sql`, SQL smoke checks and five real PostgreSQL housing integration cases are green.
+
+## Private beliefs and social-state foundations completed
+
+- [x] Objective world truth remains owned by authoritative domain systems; the social layer does not duplicate it in a generic truth table.
+- [x] Perceptions are append-oriented evidence records with direct, reported or inferred channels.
+- [x] Recording a perception does not automatically alter a person's belief.
+- [x] Contradictory evidence can coexist without rewriting history.
+- [x] Beliefs are private current-state records scoped by holder, subject and predicate.
+- [x] A belief cannot cite another observer's private perception as its evidence source.
+- [x] Exact perception and belief retries are idempotent; semantic reuse of the same identity with changed content is rejected.
+- [x] Belief updates reject stale simulation timestamps and conflicting revisions at the same timestamp.
+- [x] `learnedAt` is immutable after first persistence.
+- [x] Relationships are directional multidimensional integer vectors for familiarity, trust, affection, respect, attraction, fear, resentment and dependency.
+- [x] Relationship effects use durable `effectId` identities, making crash/retry application idempotent across fresh PostgreSQL pools.
+- [x] Effects on the same directed relationship are serialized, preventing lost concurrent updates.
+- [x] Effects older than the persisted relationship state are rejected and never recorded.
+- [x] Migration `0006_social_beliefs.sql`, SQL smoke checks and seven real PostgreSQL social integration cases are green.
+
 ### Current CI gate
 
-- [x] TypeScript typecheck green.
-- [x] 50/50 non-integration tests green, including economy/employment contract tests.
-- [x] 25/25 PostgreSQL integration tests green across 5 files on PostgreSQL 17.
-- [x] Database migrations `0001` through `0004` plus their SQL smoke checks green.
+- [x] TypeScript typecheck green across the workspace.
+- [x] 60/60 non-integration tests green across 13 files.
+- [x] 37/37 PostgreSQL integration tests green across 7 files on PostgreSQL 17.
+- [x] Database migrations `0001` through `0006` plus all SQL smoke checks green.
 
-These gates prove that the deterministic/event-driven kernel can run small physiological populations, recover exactly from worker/process crashes, maintain durable recurring or one-time commitments, conserve money under concurrent spending, and model work with crash-safe exactly-once salary effects. They do **not** yet prove coherent housing, social lives, memory, planning or LLM-driven behavior.
+These gates prove that the deterministic/event-driven kernel can run small physiological populations, recover exactly from worker/process crashes, maintain durable recurring or one-time commitments, conserve money under concurrent spending, model employment and housing with crash-safe exactly-once financial effects, and maintain private beliefs plus directional social state without conflating them with objective world truth. They do **not** yet prove durable autobiographical memory, semantic retrieval, long-term planning, rich conversations/rumor propagation, LLM-driven ambiguous behavior or coherent long-running social lives.
 
 ## Next implementation milestones
 
-- [ ] Housing/tenancy foundations and rent commitments.
-- [ ] Belief/perception and social-state foundations.
 - [ ] Memory storage/retrieval and Nomic embedding integration.
 - [ ] Ambiguous-choice cognition integration using mock/replay first, Granite second.
+- [ ] Conversation memory and information/rumor propagation.
 - [ ] 20-agent long-running social simulation gate.
 - [ ] Minimal Sprite Forge Blender fixture.
 
