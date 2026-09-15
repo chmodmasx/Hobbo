@@ -4,3 +4,4 @@ export * from "./event-repository.ts";
 export * from "./scheduler-repository.ts";
 export * from "./simulation-step-repository.ts";
 export * from "./cognition-repository.ts";
+export * from "./routine-repository.ts";
