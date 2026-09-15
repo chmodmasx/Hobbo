@@ -4,15 +4,20 @@ import {
   asEntityId,
   asEventId,
   asRoutineId,
+  asScheduledEventId,
   asWorldId,
   simDuration,
   simTime,
   type CommitmentId,
+  type CorrelationId,
+  type EntityId,
   type RoutineId,
+  type ScheduledEventId,
   type SimTime,
   type WorldId,
 } from "@hobbo/domain";
 import {
+  createCommitment,
   materializeRoutineCommitment,
   nextPeriodicOccurrence,
   scheduledEventForCommitment,
@@ -63,7 +68,7 @@ export interface PersistedRoutine<TPayload = unknown> {
 export interface PersistedCommitment<TPayload = unknown> {
   readonly worldId: WorldId;
   readonly commitment: Commitment<TPayload>;
-  readonly scheduledEventId?: string;
+  readonly scheduledEventId?: ScheduledEventId;
 }
 
 function mapRoutine(row: RoutineRow): PersistedRoutine {
@@ -97,7 +102,7 @@ function mapCommitment(row: CommitmentRow): PersistedCommitment {
     },
     ...(row.scheduled_event_id === null
       ? {}
-      : { scheduledEventId: row.scheduled_event_id }),
+      : { scheduledEventId: asScheduledEventId(row.scheduled_event_id) }),
   };
 }
 
@@ -231,32 +236,58 @@ export class PostgresRoutineRepository {
     from: SimTime,
     includeCurrent = false,
   ): Promise<PersistedCommitment> {
-    return withTransaction(this.#pool, async (client) => {
-      const persisted = await lockRoutine(client, worldId, routineId);
-      if (!persisted.enabled) {
-        throw new DomainInvariantError(`Routine is disabled: ${routineId}`);
-      }
+    return withTransaction(
+      this.#pool,
+      async (client) => {
+        const persisted = await lockRoutine(client, worldId, routineId);
+        if (!persisted.enabled) {
+          throw new DomainInvariantError(`Routine is disabled: ${routineId}`);
+        }
 
-      const existing = await client.query<CommitmentRow>(
-        `SELECT ${COMMITMENT_COLUMNS}
-           FROM commitments
-          WHERE world_id = $1
-            AND routine_id = $2
-            AND status = 'planned'
-          FOR UPDATE`,
-        [worldId, routineId],
-      );
-      const existingRow = existing.rows[0];
-      if (existingRow !== undefined) return mapCommitment(existingRow);
+        const existing = await client.query<CommitmentRow>(
+          `SELECT ${COMMITMENT_COLUMNS}
+             FROM commitments
+            WHERE world_id = $1
+              AND routine_id = $2
+              AND status = 'planned'
+            FOR UPDATE`,
+          [worldId, routineId],
+        );
+        const existingRow = existing.rows[0];
+        if (existingRow !== undefined) return mapCommitment(existingRow);
 
-      const dueAt = nextPeriodicOccurrence(
-        persisted.routine,
-        from,
-        includeCurrent,
-      );
-      const commitment = materializeRoutineCommitment(persisted.routine, dueAt);
-      return insertCommitmentAndSchedule(client, worldId, commitment);
+        const dueAt = nextPeriodicOccurrence(
+          persisted.routine,
+          from,
+          includeCurrent,
+        );
+        const commitment = materializeRoutineCommitment(persisted.routine, dueAt);
+        return insertCommitmentAndSchedule(client, worldId, commitment);
+      },
+      "read committed",
+    );
+  }
+
+  async createOneTime<TPayload>(input: {
+    readonly worldId: WorldId;
+    readonly id: CommitmentId;
+    readonly ownerId: EntityId;
+    readonly dueAt: SimTime;
+    readonly kind: string;
+    readonly payload: TPayload;
+    readonly correlationId: CorrelationId;
+  }): Promise<PersistedCommitment<TPayload>> {
+    const commitment = createCommitment({
+      id: input.id,
+      ownerId: input.ownerId,
+      dueAt: input.dueAt,
+      kind: input.kind,
+      payload: input.payload,
+      correlationId: input.correlationId,
     });
+    return withTransaction(this.#pool, (client) =>
+      insertCommitmentAndSchedule(client, input.worldId, commitment),
+    );
   }
 
   async getCommitment(
@@ -354,7 +385,7 @@ export class PostgresRoutineRepository {
       await completeScheduledEventInTransaction(
         client,
         input.worldId,
-        current.scheduledEventId as never,
+        current.scheduledEventId,
         input.workerId,
       );
 
