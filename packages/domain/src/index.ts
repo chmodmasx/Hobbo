@@ -14,8 +14,13 @@ export type SimTime = Brand<bigint, "SimTime">;
 export type SimDuration = Brand<bigint, "SimDuration">;
 export type EventSequence = Brand<bigint, "EventSequence">;
 
+// Canonical simulation-time unit: one integer tick equals one simulated second.
 export const SIM_TIME_ZERO = 0n as SimTime;
 export const SIM_DURATION_ZERO = 0n as SimDuration;
+export const SIM_SECOND = 1n as SimDuration;
+export const SIM_MINUTE = 60n as SimDuration;
+export const SIM_HOUR = 3_600n as SimDuration;
+export const SIM_DAY = 86_400n as SimDuration;
 export const FIRST_EVENT_SEQUENCE = 1n as EventSequence;
 
 function assertIntegerLike(value: bigint | number | string, label: string): bigint {
