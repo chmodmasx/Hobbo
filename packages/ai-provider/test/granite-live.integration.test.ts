@@ -49,20 +49,24 @@ function fixture(): CognitiveRequest<FixtureContext> {
 }
 
 describe("GraniteCognitiveProvider live llama.cpp contract", () => {
-  it("chooses the physically available food action through the production provider", async () => {
-    const provider = new GraniteCognitiveProvider<FixtureContext>({
-      baseUrl,
-      modelId,
-    });
+  it(
+    "chooses the physically available food action through the production provider",
+    async () => {
+      const provider = new GraniteCognitiveProvider<FixtureContext>({
+        baseUrl,
+        modelId,
+      });
 
-    const run = await provider.decideWithTrace(fixture());
+      const run = await provider.decideWithTrace(fixture());
 
-    expect(run.decision.affordanceId).toBe("eat_owned_food");
-    expect(run.decision.intent.trim().length).toBeGreaterThan(0);
-    expect(run.decision.replayed).toBe(false);
-    expect(run.trace.providerId).toBe("granite-openai-compatible");
-    expect(run.trace.modelId).toBe(modelId);
-    expect(run.trace.rawResponse.length).toBeGreaterThan(0);
-    expect(run.trace.latencyMs).toBeGreaterThanOrEqual(0);
-  });
+      expect(run.decision.affordanceId).toBe("eat_owned_food");
+      expect(run.decision.intent.trim().length).toBeGreaterThan(0);
+      expect(run.decision.replayed).toBe(false);
+      expect(run.trace.providerId).toBe("granite-openai-compatible");
+      expect(run.trace.modelId).toBe(modelId);
+      expect(run.trace.rawResponse.length).toBeGreaterThan(0);
+      expect(run.trace.latencyMs).toBeGreaterThanOrEqual(0);
+    },
+    30_000,
+  );
 });
