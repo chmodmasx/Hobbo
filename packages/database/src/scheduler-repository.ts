@@ -130,6 +130,31 @@ export async function scheduleEventsInTransaction(
   return inserted;
 }
 
+export async function completeScheduledEventInTransaction(
+  client: PoolClient,
+  worldId: WorldId,
+  eventId: ScheduledEventId,
+  workerId: string,
+): Promise<void> {
+  const result = await client.query(
+    `UPDATE scheduled_events
+        SET status = 'completed',
+            completed_at = now(),
+            locked_by = NULL,
+            locked_at = NULL
+      WHERE world_id = $1
+        AND id = $2
+        AND status = 'processing'
+        AND locked_by = $3`,
+    [worldId, eventId, workerId],
+  );
+  if (result.rowCount !== 1) {
+    throw new DomainInvariantError(
+      `Scheduled event ${eventId} is not owned by worker ${workerId}`,
+    );
+  }
+}
+
 export class PostgresScheduledEventRepository {
   readonly #pool: Pool;
 
@@ -224,28 +249,50 @@ export class PostgresScheduledEventRepository {
     }, "read committed");
   }
 
+  async requeueStale(
+    worldId: WorldId,
+    staleBefore: Date,
+    limit = 100,
+  ): Promise<number> {
+    if (Number.isNaN(staleBefore.getTime())) {
+      throw new DomainInvariantError("staleBefore must be a valid Date");
+    }
+    if (!Number.isSafeInteger(limit) || limit <= 0) {
+      throw new DomainInvariantError("requeue limit must be a positive safe integer");
+    }
+
+    const result = await this.#pool.query(
+      `WITH stale AS (
+         SELECT world_id, id
+           FROM scheduled_events
+          WHERE world_id = $1
+            AND status = 'processing'
+            AND locked_at <= $2
+          ORDER BY locked_at ASC, ordinal ASC
+          FOR UPDATE SKIP LOCKED
+          LIMIT $3
+       )
+       UPDATE scheduled_events AS scheduled
+          SET status = 'pending',
+              locked_by = NULL,
+              locked_at = NULL
+         FROM stale
+        WHERE scheduled.world_id = stale.world_id
+          AND scheduled.id = stale.id`,
+      [worldId, staleBefore, limit],
+    );
+
+    return result.rowCount ?? 0;
+  }
+
   async complete(
     worldId: WorldId,
     eventId: ScheduledEventId,
     workerId: string,
   ): Promise<void> {
-    const result = await this.#pool.query(
-      `UPDATE scheduled_events
-          SET status = 'completed',
-              completed_at = now(),
-              locked_by = NULL,
-              locked_at = NULL
-        WHERE world_id = $1
-          AND id = $2
-          AND status = 'processing'
-          AND locked_by = $3`,
-      [worldId, eventId, workerId],
+    await withTransaction(this.#pool, (client) =>
+      completeScheduledEventInTransaction(client, worldId, eventId, workerId),
     );
-    if (result.rowCount !== 1) {
-      throw new DomainInvariantError(
-        `Scheduled event ${eventId} is not owned by worker ${workerId}`,
-      );
-    }
   }
 
   async fail(
