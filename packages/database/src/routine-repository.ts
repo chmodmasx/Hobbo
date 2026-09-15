@@ -169,7 +169,6 @@ export async function createRoutineInTransaction<TPayload>(
   worldId: WorldId,
   routine: PeriodicRoutine<TPayload>,
 ): Promise<PersistedRoutine<TPayload>> {
-  // Exercise the pure routine invariant validation before persisting the template.
   nextPeriodicOccurrence(routine, simTime(0), true);
 
   const result = await client.query<RoutineRow>(
@@ -335,10 +334,6 @@ export class PostgresRoutineRepository {
     return row === undefined ? undefined : mapCommitment(row);
   }
 
-  /**
-   * Fulfils a claimed routine commitment and lazily creates exactly one next
-   * occurrence in the same transaction as world-time/event updates.
-   */
   async fulfillClaimedAndScheduleNext(input: {
     readonly worldId: WorldId;
     readonly commitmentId: CommitmentId;
@@ -373,9 +368,9 @@ export class PostgresRoutineRepository {
           `Commitment ${input.commitmentId} has no scheduled event`,
         );
       }
-      if (current.commitment.dueAt !== input.at) {
+      if (input.at < current.commitment.dueAt) {
         throw new DomainInvariantError(
-          `Commitment ${input.commitmentId} is due at ${current.commitment.dueAt}, not ${input.at}`,
+          `Commitment ${input.commitmentId} cannot be fulfilled before ${current.commitment.dueAt}; received ${input.at}`,
         );
       }
 
@@ -425,7 +420,7 @@ export class PostgresRoutineRepository {
       if (routineId !== undefined) {
         const routine = await lockRoutine(client, input.worldId, routineId);
         if (routine.enabled) {
-          const dueAt = nextPeriodicOccurrence(routine.routine, input.at, false);
+          const dueAt = nextPeriodicOccurrence(routine.routine, fulfilled.commitment.dueAt, false);
           next = await insertCommitmentAndSchedule(
             client,
             input.worldId,
