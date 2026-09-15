@@ -100,7 +100,7 @@ describe("finite conversation model", () => {
 describe("private information propagation", () => {
   it("turns speech into reported evidence without leaking omniscient origin metadata", () => {
     const fabricated: ConversationStatement = {
-      id: asConversationStatementId("fabricated-statement"),
+      id: asConversationStatementId("private-statement"),
       subjectId: "cafe-1",
       predicate: "closing_time",
       value: "18:00",
@@ -123,11 +123,21 @@ describe("private information propagation", () => {
     });
 
     const listenerMetadata = effects.memory.metadata as Record<string, unknown>;
-    expect(JSON.stringify(listenerMetadata)).not.toContain("fabricated");
-    expect(JSON.stringify(listenerMetadata)).not.toContain("statement-origin");
+    expect(listenerMetadata).not.toHaveProperty("statements");
+    expect(listenerMetadata).not.toHaveProperty("origin");
+    expect(listenerMetadata).not.toHaveProperty("sourceStatementId");
+    expect(listenerMetadata.statementIds).toEqual(["private-statement"]);
 
     const speaker = deriveSpeakerMemory(conversation(), spoken);
-    expect(JSON.stringify(speaker.metadata)).toContain("fabricated");
+    expect(speaker.metadata).toMatchObject({
+      statements: [
+        expect.objectContaining({
+          id: "private-statement",
+          origin: "fabricated",
+          sourceStatementId: null,
+        }),
+      ],
+    });
   });
 
   it("uses relationship trust to produce different private confidence and belief outcomes", () => {
