@@ -229,3 +229,5 @@ export function runHeadlessFoodSimulation(
     agents,
   };
 }
+
+export * from "./sleep.ts";
