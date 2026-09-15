@@ -34,7 +34,7 @@
 - [x] Property-based determinism/invariant tests.
 - [x] Initial PostgreSQL migration for worlds, domain events, scheduled events and cognition runs.
 - [x] PostgreSQL migration smoke test on a real PostgreSQL 17 service in GitHub Actions.
-- [x] Strict TypeScript core CI green with 27 tests across six test files.
+- [x] Strict TypeScript core CI green.
 
 ### Core invariants currently enforced
 
@@ -50,25 +50,48 @@
 - Replay cognition fails on missing or no-longer-valid recorded decisions rather than calling a model.
 - PostgreSQL rejects negative simulation time and invalid scheduler states.
 
-## First headless physiology gate completed
+## Persistence and crash-recovery gate completed
+
+- [x] PostgreSQL repositories for world state, domain events, scheduled events and cognition runs.
+- [x] Explicit JSONB serialization at the database boundary.
+- [x] Transactional event-sequence and scheduler-ordinal allocation.
+- [x] Concurrent scheduler workers use `FOR UPDATE SKIP LOCKED` without duplicate ownership.
+- [x] Worker leases can be recovered after a stale `processing` claim.
+- [x] Scheduled-event outcomes commit world-time advancement, domain events, future consequences and job completion atomically.
+- [x] Failed outcome transactions leave no partial world-time or event-history mutations.
+- [x] Crash/restart integration test opens a fresh PostgreSQL pool with no in-memory scheduler state and resumes deterministically.
+- [x] Continuous and crash/restarted 10-step simulations produce identical event history and final world sequence/time.
+- [x] Real PostgreSQL 17 integration suite green with 9/9 tests.
+
+## Headless physiology gates completed
+
+### Hunger / food / inventory
 
 - [x] Minimal hunger/food/inventory domain slice.
 - [x] Hunger integrated analytically from elapsed simulation time; no per-agent physiology tick.
-- [x] Exact scheduled time for hunger threshold crossings.
+- [x] Exact scheduled time for hunger threshold crossings, including fractional elapsed-rate progress.
 - [x] Food consumption validated through the shared action registry.
 - [x] Property-based tests for need bounds and threshold timing.
-- [x] 20-agent, 30-simulated-day headless fixture.
+- [x] 20-agent, 30-simulated-day headless food fixture.
 - [x] Same seed produces an identical final result; different seeds produce different deterministic populations.
 - [x] Every headless meal creates a domain event and consumes exactly one owned inventory item.
 
-This gate proves that the deterministic/event-driven simulation kernel can run a small physiological population coherently without a global NPC tick. It does **not** yet prove coherent social lives, economy, memory, planning or LLM-driven behavior.
+### Sleep / energy
+
+- [x] Analytical bounded energy state with explicit `awake` and `sleeping` modes.
+- [x] Awake energy drain and sleeping recovery are integrated from elapsed simulation time without ticks.
+- [x] Exact first-second scheduling for sleep and recovery thresholds.
+- [x] `begin_sleep` and `wake_up` pass through the shared action registry.
+- [x] Sleep desirability is intentionally not a hard action invariant; policy remains separate from physical possibility.
+- [x] Property-based threshold tests and transition tests.
+- [x] 20-agent, 30-simulated-day sleep fixture with deterministic repeated sleep/wake cycles.
+- [x] Current CI: 34/34 non-integration tests across seven files plus 9/9 PostgreSQL integration tests.
+
+These gates prove that the deterministic/event-driven simulation kernel can run small physiological populations coherently without a global NPC tick and can recover exactly from a worker/process crash. They do **not** yet prove coherent social lives, economy, memory, planning or LLM-driven behavior.
 
 ## Next implementation milestones
 
-- [ ] Persistence repositories/transactions over the core PostgreSQL schema.
-- [ ] Persisted scheduler recovery and event-replay integration test.
-- [ ] Sleep/energy physiology slice.
-- [ ] Basic routines and commitments using scheduled events.
+- [ ] Basic recurring routines and concrete commitments using scheduled events.
 - [ ] Ledger economy, employment and housing foundations.
 - [ ] Belief/perception and social-state foundations.
 - [ ] Memory storage/retrieval and Nomic embedding integration.
