@@ -3,6 +3,7 @@ import {
   CONSUME_FOOD_ACTION_ID,
   consumeFood,
   createConsumeFoodActionDefinition,
+  createEnergyState,
   createFoodItem,
   createHungerState,
   hungerAt,
@@ -79,8 +80,10 @@ function makePerson(index: number, random: DeterministicRandom): PersonState {
   return {
     id: personId,
     hunger: createHungerState(initialHunger, simTime(0), ratePerHour),
+    energy: createEnergyState(8_000, simTime(0), 450, 1_800, "awake"),
     inventory,
     mealsEaten: 0,
+    sleepSessions: 0,
   };
 }
 
