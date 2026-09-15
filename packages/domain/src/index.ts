@@ -17,6 +17,9 @@ export type EmploymentId = Brand<string, "EmploymentId">;
 export type HousingUnitId = Brand<string, "HousingUnitId">;
 export type TenancyId = Brand<string, "TenancyId">;
 export type MemoryId = Brand<string, "MemoryId">;
+export type ConversationId = Brand<string, "ConversationId">;
+export type ConversationMessageId = Brand<string, "ConversationMessageId">;
+export type ConversationStatementId = Brand<string, "ConversationStatementId">;
 
 export type SimTime = Brand<bigint, "SimTime">;
 export type SimDuration = Brand<bigint, "SimDuration">;
@@ -205,4 +208,16 @@ export function asTenancyId(value: string): TenancyId {
 
 export function asMemoryId(value: string): MemoryId {
   return value as MemoryId;
+}
+
+export function asConversationId(value: string): ConversationId {
+  return value as ConversationId;
+}
+
+export function asConversationMessageId(value: string): ConversationMessageId {
+  return value as ConversationMessageId;
+}
+
+export function asConversationStatementId(value: string): ConversationStatementId {
+  return value as ConversationStatementId;
 }
