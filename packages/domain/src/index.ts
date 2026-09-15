@@ -14,6 +14,8 @@ export type CommitmentId = Brand<string, "CommitmentId">;
 export type LedgerAccountId = Brand<string, "LedgerAccountId">;
 export type LedgerTransactionId = Brand<string, "LedgerTransactionId">;
 export type EmploymentId = Brand<string, "EmploymentId">;
+export type HousingUnitId = Brand<string, "HousingUnitId">;
+export type TenancyId = Brand<string, "TenancyId">;
 
 export type SimTime = Brand<bigint, "SimTime">;
 export type SimDuration = Brand<bigint, "SimDuration">;
@@ -190,4 +192,12 @@ export function asLedgerTransactionId(value: string): LedgerTransactionId {
 
 export function asEmploymentId(value: string): EmploymentId {
   return value as EmploymentId;
+}
+
+export function asHousingUnitId(value: string): HousingUnitId {
+  return value as HousingUnitId;
+}
+
+export function asTenancyId(value: string): TenancyId {
+  return value as TenancyId;
 }
