@@ -1,0 +1,36 @@
+# Dependencies
+node_modules/
+.pnpm-store/
+
+# Build output
+dist/
+build/
+coverage/
+
+# Local model weights
+.cache/models/
+models/*.gguf
+*.gguf
+
+# llama.cpp checkout/build used by local/CI tooling
+.cache/llama.cpp/
+
+# Sprite Forge generated artifacts
+assets/generated/
+.cache/sprite-forge/
+
+# Blender/temp
+*.blend1
+*.blend2
+*.tmp
+
+# OS / editors
+.DS_Store
+Thumbs.db
+.vscode/
+.idea/
+
+# Environment
+.env
+.env.*
+!.env.example
