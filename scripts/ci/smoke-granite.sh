@@ -15,6 +15,7 @@ PARSED_FILE="${RUNNER_TEMP:-/tmp}/hobbo-granite-decision.json"
 
 [[ -f "$MODEL" ]] || { echo "Missing cognition model: $MODEL" >&2; exit 2; }
 [[ -x "$LLAMA_SERVER" ]] || { echo "Missing llama-server: $LLAMA_SERVER" >&2; exit 2; }
+command -v pnpm >/dev/null 2>&1 || { echo "pnpm is required for the provider smoke test" >&2; exit 2; }
 
 show_diagnostics() {
   echo "===== Granite API response =====" >&2
@@ -97,9 +98,6 @@ then
   exit 1
 fi
 
-# OpenAI-compatible servers normally return message.content as a JSON string.
-# Keep the smoke test tolerant of an implementation returning the constrained
-# result as an object while remaining strict about the actual decision schema.
 CONTENT_TYPE="$(jq -r '.choices[0].message.content | type' "$RESPONSE_FILE" 2>/dev/null || echo missing)"
 case "$CONTENT_TYPE" in
   string)
@@ -134,9 +132,6 @@ if ! jq -e '
   exit 1
 fi
 
-# This deterministic fixture is deliberately obvious: a starving actor who
-# already owns food should choose to eat it. This catches protocol success with
-# semantically broken decision-making.
 if [[ "$(jq -r '.affordance_id' "$PARSED_FILE")" != "eat_owned_food" ]]; then
   echo "Granite produced a valid but incorrect decision for the deterministic fixture." >&2
   show_diagnostics
@@ -145,6 +140,18 @@ if [[ "$(jq -r '.affordance_id' "$PARSED_FILE")" != "eat_owned_food" ]]; then
   exit 1
 fi
 
-echo "Granite smoke test passed."
+echo "Raw Granite endpoint smoke test passed."
 echo -n "Decision: "
 jq -c . "$PARSED_FILE"
+
+(
+  cd "$ROOT_DIR"
+  HOBBO_COGNITION_BASE_URL="http://127.0.0.1:$PORT" \
+  HOBBO_COGNITION_MODEL_ID="hobbo-cognition" \
+    pnpm exec vitest run \
+      packages/ai-provider/test/granite-live.integration.test.ts \
+      --maxWorkers=1 \
+      --no-file-parallelism
+)
+
+echo "GraniteCognitiveProvider live llama.cpp smoke test passed."
