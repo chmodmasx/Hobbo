@@ -8,11 +8,13 @@ on:
       - '.github/workflows/model-smoke.yml'
       - 'models/**'
       - 'scripts/ci/**'
+      - 'packages/ai-provider/**'
   pull_request:
     paths:
       - '.github/workflows/model-smoke.yml'
       - 'models/**'
       - 'scripts/ci/**'
+      - 'packages/ai-provider/**'
 
 permissions:
   contents: read
@@ -45,6 +47,8 @@ jobs:
             curl \
             jq \
             ninja-build
+          npm install --global pnpm@10.15.1
+          pnpm install --no-frozen-lockfile
 
       - name: Restore GGUF cache
         id: model-cache
@@ -112,7 +116,8 @@ jobs:
           LLAMA_SERVER: ${{ github.workspace }}/.cache/llama.cpp/build/bin/llama-server
         run: bash scripts/ci/smoke-granite.sh
 
-      - name: Smoke test Nomic embeddings
+      - name: Smoke test Nomic embeddings through provider
         env:
           LLAMA_SERVER: ${{ github.workspace }}/.cache/llama.cpp/build/bin/llama-server
+          HOBBO_EMBEDDING_EXPECTED_DIMENSIONS: 768
         run: bash scripts/ci/smoke-nomic.sh
