@@ -8,6 +8,7 @@ import {
   asScheduledEventId,
   asWorldId,
   simTime,
+  type WorldId,
 } from "@hobbo/domain";
 import { ScheduledEventQueue } from "@hobbo/simulation";
 import {
@@ -15,6 +16,7 @@ import {
   PostgresDomainEventRepository,
   PostgresScheduledEventRepository,
   PostgresWorldRepository,
+  commitScheduledEventOutcome,
 } from "../src/index.ts";
 
 const pool = new Pool();
@@ -207,6 +209,330 @@ describe("durable scheduler", () => {
       schedules.complete(worldId, ownedByA.event.id, "worker-b"),
     ).rejects.toThrow(/not owned/i);
     await schedules.complete(worldId, ownedByA.event.id, "worker-a");
+  });
+
+  it("requeues stale processing leases so another worker can recover them", async () => {
+    const worldId = asWorldId("world-stale-lease");
+    await worlds.create(worldId);
+    await schedules.schedule(worldId, {
+      id: asScheduledEventId("stale-job"),
+      dueAt: simTime(10),
+      type: "test.job",
+      payload: {},
+      correlationId: asCorrelationId("corr-stale"),
+    });
+
+    const firstClaim = await schedules.claimDue(
+      worldId,
+      simTime(10),
+      "dead-worker",
+      1,
+    );
+    expect(firstClaim).toHaveLength(1);
+
+    await pool.query(
+      `UPDATE scheduled_events
+          SET locked_at = now() - interval '10 minutes'
+        WHERE world_id = $1 AND id = $2`,
+      [worldId, "stale-job"],
+    );
+
+    expect(await schedules.requeueStale(worldId, new Date())).toBe(1);
+
+    const recovered = await schedules.claimDue(
+      worldId,
+      simTime(10),
+      "replacement-worker",
+      1,
+    );
+    expect(recovered).toHaveLength(1);
+    expect(recovered[0]?.attempts).toBe(2);
+    expect(recovered[0]?.lockedBy).toBe("replacement-worker");
+  });
+});
+
+describe("atomic scheduled-event outcomes", () => {
+  it("rolls back world time and event history if a consequence insert fails", async () => {
+    const worldId = asWorldId("world-atomic-outcome");
+    await worlds.create(worldId);
+    const rootId = asScheduledEventId("root-job");
+    await schedules.schedule(worldId, {
+      id: rootId,
+      dueAt: simTime(10),
+      type: "test.root",
+      payload: {},
+      correlationId: asCorrelationId("corr-root"),
+    });
+
+    const claimed = await schedules.claimDue(worldId, simTime(10), "worker", 1);
+    expect(claimed[0]?.event.id).toBe(rootId);
+
+    await expect(
+      commitScheduledEventOutcome(pool, {
+        worldId,
+        eventId: rootId,
+        workerId: "worker",
+        processedAt: simTime(10),
+        domainEvents: [
+          {
+            id: asEventId("root-domain-event"),
+            worldId,
+            simTime: simTime(10),
+            type: "test.processed",
+            payload: { ok: true },
+            correlationId: asCorrelationId("corr-root"),
+          },
+        ],
+        scheduledEvents: [
+          {
+            id: rootId,
+            dueAt: simTime(20),
+            type: "test.duplicate",
+            payload: {},
+            correlationId: asCorrelationId("corr-root-next"),
+          },
+        ],
+      }),
+    ).rejects.toThrow();
+
+    expect(await events.list(worldId)).toEqual([]);
+    const worldAfterFailure = await worlds.get(worldId);
+    expect(worldAfterFailure?.currentSimTime).toBe(0n);
+    expect(worldAfterFailure?.nextEventSequence).toBe(1n);
+
+    const status = await pool.query<{ status: string; locked_by: string | null }>(
+      `SELECT status, locked_by
+         FROM scheduled_events
+        WHERE world_id = $1 AND id = $2`,
+      [worldId, rootId],
+    );
+    expect(status.rows[0]).toEqual({ status: "processing", locked_by: "worker" });
+
+    await commitScheduledEventOutcome(pool, {
+      worldId,
+      eventId: rootId,
+      workerId: "worker",
+      processedAt: simTime(10),
+      domainEvents: [
+        {
+          id: asEventId("root-domain-event"),
+          worldId,
+          simTime: simTime(10),
+          type: "test.processed",
+          payload: { ok: true },
+          correlationId: asCorrelationId("corr-root"),
+        },
+      ],
+    });
+
+    expect((await events.list(worldId)).map((event) => event.sequence)).toEqual([1n]);
+    expect((await worlds.get(worldId))?.currentSimTime).toBe(10n);
+  });
+});
+
+interface ChainPayload {
+  readonly step: number;
+}
+
+function readChainStep(payload: unknown): number {
+  if (
+    typeof payload !== "object" ||
+    payload === null ||
+    !("step" in payload) ||
+    typeof payload.step !== "number" ||
+    !Number.isSafeInteger(payload.step)
+  ) {
+    throw new Error("Invalid chain payload");
+  }
+  return payload.step;
+}
+
+async function seedChain(
+  worldRepo: PostgresWorldRepository,
+  scheduleRepo: PostgresScheduledEventRepository,
+  worldId: WorldId,
+): Promise<void> {
+  await worldRepo.create(worldId);
+  await scheduleRepo.schedule(worldId, {
+    id: asScheduledEventId("chain-job-1"),
+    dueAt: simTime(10),
+    type: "test.chain",
+    payload: { step: 1 } satisfies ChainPayload,
+    correlationId: asCorrelationId("chain-corr-1"),
+  });
+}
+
+async function processNextChainStep(
+  dbPool: Pool,
+  scheduleRepo: PostgresScheduledEventRepository,
+  worldId: WorldId,
+  workerId: string,
+): Promise<boolean> {
+  const claimed = await scheduleRepo.claimDue(
+    worldId,
+    simTime(1_000_000),
+    workerId,
+    1,
+  );
+  const job = claimed[0];
+  if (job === undefined) return false;
+
+  const step = readChainStep(job.event.payload);
+  const domainEventId = asEventId(`chain-event-${step}`);
+  const next =
+    step < 10
+      ? [
+          {
+            id: asScheduledEventId(`chain-job-${step + 1}`),
+            dueAt: simTime((step + 1) * 10),
+            type: "test.chain",
+            payload: { step: step + 1 } satisfies ChainPayload,
+            correlationId: asCorrelationId(`chain-corr-${step + 1}`),
+            causationId: domainEventId,
+          },
+        ]
+      : [];
+
+  await commitScheduledEventOutcome(dbPool, {
+    worldId,
+    eventId: job.event.id,
+    workerId,
+    processedAt: job.event.dueAt,
+    domainEvents: [
+      {
+        id: domainEventId,
+        worldId,
+        simTime: job.event.dueAt,
+        type: "test.chain.processed",
+        payload: { step } satisfies ChainPayload,
+        correlationId: job.event.correlationId,
+      },
+    ],
+    scheduledEvents: next,
+  });
+  return true;
+}
+
+async function runChainToCompletion(
+  dbPool: Pool,
+  scheduleRepo: PostgresScheduledEventRepository,
+  worldId: WorldId,
+  workerId: string,
+): Promise<void> {
+  for (let guard = 0; guard < 20; guard += 1) {
+    if (!(await processNextChainStep(dbPool, scheduleRepo, worldId, workerId))) {
+      return;
+    }
+  }
+  throw new Error("Chain guard exhausted");
+}
+
+function comparableHistory(
+  history: Awaited<ReturnType<PostgresDomainEventRepository["list"]>>,
+): unknown {
+  return history.map((event) => ({
+    sequence: event.sequence,
+    id: event.id,
+    simTime: event.simTime,
+    type: event.type,
+    payload: event.payload,
+    correlationId: event.correlationId,
+    causationId: event.causationId,
+  }));
+}
+
+describe("crash/restart deterministic continuation", () => {
+  it("produces the same history after a worker dies with a claimed event", async () => {
+    const referenceWorld = asWorldId("world-reference-run");
+    const recoveredWorld = asWorldId("world-recovered-run");
+
+    await seedChain(worlds, schedules, referenceWorld);
+    await runChainToCompletion(pool, schedules, referenceWorld, "reference-worker");
+
+    await seedChain(worlds, schedules, recoveredWorld);
+    for (let step = 0; step < 5; step += 1) {
+      expect(
+        await processNextChainStep(pool, schedules, recoveredWorld, "worker-before-crash"),
+      ).toBe(true);
+    }
+
+    const abandoned = await schedules.claimDue(
+      recoveredWorld,
+      simTime(1_000_000),
+      "dead-worker",
+      1,
+    );
+    expect(abandoned[0]?.event.id).toBe("chain-job-6");
+
+    await pool.query(
+      `UPDATE scheduled_events
+          SET locked_at = now() - interval '10 minutes'
+        WHERE world_id = $1 AND id = $2`,
+      [recoveredWorld, "chain-job-6"],
+    );
+
+    // New pool/repositories model a fresh process with no in-memory scheduler state.
+    const restartedPool = new Pool();
+    const restartedSchedules = new PostgresScheduledEventRepository(restartedPool);
+    const restartedEvents = new PostgresDomainEventRepository(restartedPool);
+    const restartedWorlds = new PostgresWorldRepository(restartedPool);
+
+    try {
+      expect(await restartedSchedules.requeueStale(recoveredWorld, new Date())).toBe(1);
+      await runChainToCompletion(
+        restartedPool,
+        restartedSchedules,
+        recoveredWorld,
+        "worker-after-restart",
+      );
+
+      const referenceHistory = await events.list(referenceWorld);
+      const recoveredHistory = await restartedEvents.list(recoveredWorld);
+      expect(comparableHistory(recoveredHistory)).toEqual(
+        comparableHistory(referenceHistory),
+      );
+
+      expect(referenceHistory).toHaveLength(10);
+      expect(recoveredHistory).toHaveLength(10);
+      expect(recoveredHistory.map((event) => event.sequence)).toEqual(
+        Array.from({ length: 10 }, (_, index) => BigInt(index + 1)),
+      );
+
+      const referenceState = await worlds.get(referenceWorld);
+      const recoveredState = await restartedWorlds.get(recoveredWorld);
+      expect(recoveredState?.currentSimTime).toBe(referenceState?.currentSimTime);
+      expect(recoveredState?.nextEventSequence).toBe(
+        referenceState?.nextEventSequence,
+      );
+      expect(recoveredState?.currentSimTime).toBe(100n);
+      expect(recoveredState?.nextEventSequence).toBe(11n);
+      expect(await restartedSchedules.loadPending(recoveredWorld)).toEqual([]);
+
+      const scheduledCounts = await restartedPool.query<{
+        status: string;
+        count: string;
+      }>(
+        `SELECT status, count(*)::text AS count
+           FROM scheduled_events
+          WHERE world_id = $1
+          GROUP BY status
+          ORDER BY status`,
+        [recoveredWorld],
+      );
+      expect(scheduledCounts.rows).toEqual([
+        { status: "completed", count: "10" },
+      ]);
+
+      const retried = await restartedPool.query<{ attempts: number }>(
+        `SELECT attempts
+           FROM scheduled_events
+          WHERE world_id = $1 AND id = 'chain-job-6'`,
+        [recoveredWorld],
+      );
+      expect(retried.rows[0]?.attempts).toBe(2);
+    } finally {
+      await restartedPool.end();
+    }
   });
 });
 
