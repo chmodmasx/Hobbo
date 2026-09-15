@@ -10,6 +10,7 @@ import {
 } from "@hobbo/domain";
 import type { ScheduledEvent } from "@hobbo/simulation";
 import type { Pool, PoolClient, QueryResultRow } from "pg";
+import { toJsonParameter } from "./json.ts";
 import { withTransaction } from "./transaction.ts";
 import { lockWorld } from "./world-repository.ts";
 
@@ -103,7 +104,7 @@ export async function scheduleEventsInTransaction(
         event.dueAt.toString(),
         nextOrdinal.toString(),
         event.type,
-        event.payload,
+        toJsonParameter(event.payload, `scheduled event ${event.id} payload`),
         event.correlationId,
         event.causationId ?? null,
       ],
