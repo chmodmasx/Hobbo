@@ -84,4 +84,27 @@ CREATE INDEX relationships_source_event_idx
   ON relationships (world_id, last_source_event_id)
   WHERE last_source_event_id IS NOT NULL;
 
+CREATE TABLE relationship_effects (
+  world_id TEXT NOT NULL REFERENCES worlds(id) ON DELETE CASCADE,
+  effect_id TEXT NOT NULL CHECK (length(btrim(effect_id)) > 0),
+  from_entity_id TEXT NOT NULL CHECK (length(from_entity_id) > 0),
+  to_entity_id TEXT NOT NULL CHECK (length(to_entity_id) > 0),
+  sim_time BIGINT NOT NULL CHECK (sim_time >= 0),
+  delta JSONB NOT NULL CHECK (jsonb_typeof(delta) = 'object'),
+  source_event_id TEXT NULL,
+  created_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+  PRIMARY KEY (world_id, effect_id),
+  FOREIGN KEY (world_id, source_event_id)
+    REFERENCES domain_events(world_id, id)
+    DEFERRABLE INITIALLY DEFERRED,
+  CONSTRAINT relationship_effect_not_self CHECK (from_entity_id <> to_entity_id)
+);
+
+CREATE INDEX relationship_effects_pair_time_idx
+  ON relationship_effects (world_id, from_entity_id, to_entity_id, sim_time, effect_id);
+
+CREATE INDEX relationship_effects_source_event_idx
+  ON relationship_effects (world_id, source_event_id)
+  WHERE source_event_id IS NOT NULL;
+
 COMMIT;
