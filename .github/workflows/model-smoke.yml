@@ -24,6 +24,7 @@ concurrency:
 env:
   HOBBO_MODEL_DIR: ${{ github.workspace }}/.cache/models
   LLAMA_CPP_DIR: ${{ github.workspace }}/.cache/llama.cpp
+  LLAMA_CPP_REF: 6011c34ce6099646ccdf0d39a61c6e681477c178
 
 jobs:
   model-smoke:
@@ -47,7 +48,7 @@ jobs:
 
       - name: Restore GGUF cache
         id: model-cache
-        uses: actions/cache@v4
+        uses: actions/cache/restore@v4
         with:
           path: .cache/models
           key: hobbo-models-${{ runner.os }}-${{ hashFiles('models/models.lock.json') }}
@@ -57,13 +58,31 @@ jobs:
       - name: Download and verify baseline GGUFs
         run: bash scripts/ci/download-models.sh all
 
-      - name: Clone llama.cpp
+      - name: Save GGUF cache immediately
+        if: steps.model-cache.outputs.cache-hit != 'true'
+        uses: actions/cache/save@v4
+        with:
+          path: .cache/models
+          key: hobbo-models-${{ runner.os }}-${{ hashFiles('models/models.lock.json') }}
+
+      - name: Restore pinned llama.cpp build
+        id: llama-cache
+        uses: actions/cache/restore@v4
+        with:
+          path: .cache/llama.cpp
+          key: hobbo-llama-cpp-${{ runner.os }}-${{ env.LLAMA_CPP_REF }}
+
+      - name: Checkout pinned llama.cpp
+        if: steps.llama-cache.outputs.cache-hit != 'true'
         run: |
           rm -rf "$LLAMA_CPP_DIR"
-          git clone --depth 1 https://github.com/ggml-org/llama.cpp.git "$LLAMA_CPP_DIR"
-          git -C "$LLAMA_CPP_DIR" rev-parse HEAD | tee "$RUNNER_TEMP/llama-cpp-commit.txt"
+          git clone --filter=blob:none --no-checkout https://github.com/ggml-org/llama.cpp.git "$LLAMA_CPP_DIR"
+          git -C "$LLAMA_CPP_DIR" fetch --depth 1 origin "$LLAMA_CPP_REF"
+          git -C "$LLAMA_CPP_DIR" checkout --detach FETCH_HEAD
+          test "$(git -C "$LLAMA_CPP_DIR" rev-parse HEAD)" = "$LLAMA_CPP_REF"
 
-      - name: Build llama-server for CPU
+      - name: Build pinned llama-server for CPU
+        if: steps.llama-cache.outputs.cache-hit != 'true'
         run: |
           cmake \
             -S "$LLAMA_CPP_DIR" \
@@ -74,9 +93,17 @@ jobs:
             -DLLAMA_CURL=OFF
           cmake --build "$LLAMA_CPP_DIR/build" --target llama-server --parallel 4
 
-      - name: Show test dependency versions
+      - name: Save pinned llama.cpp build immediately
+        if: steps.llama-cache.outputs.cache-hit != 'true'
+        uses: actions/cache/save@v4
+        with:
+          path: .cache/llama.cpp
+          key: hobbo-llama-cpp-${{ runner.os }}-${{ env.LLAMA_CPP_REF }}
+
+      - name: Verify test dependency versions
         run: |
-          echo "llama.cpp commit: $(cat "$RUNNER_TEMP/llama-cpp-commit.txt")"
+          test "$(git -C "$LLAMA_CPP_DIR" rev-parse HEAD)" = "$LLAMA_CPP_REF"
+          echo "llama.cpp commit: $(git -C "$LLAMA_CPP_DIR" rev-parse HEAD)"
           "$LLAMA_CPP_DIR/build/bin/llama-server" --version
           jq -r '.models | to_entries[] | "\(.key): \(.value.file) [\(.value.quantization)]"' models/models.lock.json
 
