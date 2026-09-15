@@ -127,8 +127,10 @@ export class PostgresDomainEventRepository {
   async append<TType extends string, TPayload>(
     draft: DomainEventDraft<TType, TPayload>,
   ): Promise<DomainEvent<TType, TPayload>> {
-    const events = await withTransaction(this.#pool, (client) =>
-      appendDomainEventsInTransaction(client, draft.worldId, [draft]),
+    const events = await withTransaction(
+      this.#pool,
+      (client) => appendDomainEventsInTransaction(client, draft.worldId, [draft]),
+      "read committed",
     );
     const event = events[0];
     if (event === undefined) {
@@ -141,8 +143,10 @@ export class PostgresDomainEventRepository {
     worldId: WorldId,
     drafts: readonly DomainEventDraft[],
   ): Promise<readonly DomainEvent[]> {
-    return withTransaction(this.#pool, (client) =>
-      appendDomainEventsInTransaction(client, worldId, drafts),
+    return withTransaction(
+      this.#pool,
+      (client) => appendDomainEventsInTransaction(client, worldId, drafts),
+      "read committed",
     );
   }
 
