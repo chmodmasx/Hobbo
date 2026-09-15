@@ -61,7 +61,6 @@
 - [x] Failed outcome transactions leave no partial world-time or event-history mutations.
 - [x] Crash/restart integration test opens a fresh PostgreSQL pool with no in-memory scheduler state and resumes deterministically.
 - [x] Continuous and crash/restarted 10-step simulations produce identical event history and final world sequence/time.
-- [x] Real PostgreSQL 17 integration suite green with 9/9 tests.
 
 ## Headless physiology gates completed
 
@@ -85,14 +84,36 @@
 - [x] Sleep desirability is intentionally not a hard action invariant; policy remains separate from physical possibility.
 - [x] Property-based threshold tests and transition tests.
 - [x] 20-agent, 30-simulated-day sleep fixture with deterministic repeated sleep/wake cycles.
-- [x] Current CI: 34/34 non-integration tests across seven files plus 9/9 PostgreSQL integration tests.
 
-These gates prove that the deterministic/event-driven simulation kernel can run small physiological populations coherently without a global NPC tick and can recover exactly from a worker/process crash. They do **not** yet prove coherent social lives, economy, memory, planning or LLM-driven behavior.
+## Recurring routines and commitments completed
+
+- [x] Generic periodic routine model expressed as `(period, phase)` rather than hardcoded calendar cases.
+- [x] Concrete commitment model separated from the recurring template.
+- [x] Daily, weekly and weekday-style schedules can be composed from the same primitive.
+- [x] Only the next occurrence is materialized; recurring routines do not pre-fill the scheduler/database with years of future jobs.
+- [x] 20-agent, 30-day routine fixture executes exactly 600 daily commitments while keeping at most 20 future jobs queued.
+- [x] One-time commitments use the same scheduler path without inventing a recurrence.
+- [x] PostgreSQL persistence for routine templates and concrete commitments.
+- [x] Partial unique index guarantees at most one `planned` commitment per recurring routine.
+- [x] Concurrent `materializeNext()` calls converge on the same concrete occurrence.
+- [x] Fulfillment, domain-event append, scheduled-event completion and next-occurrence materialization are transactional.
+- [x] Disabling a routine allows the already-materialized occurrence to resolve without generating another.
+- [x] Destructive PostgreSQL integration fixtures are serialized at file level while explicit concurrency tests remain concurrent inside each test.
+
+### Current CI gate
+
+- [x] TypeScript typecheck green.
+- [x] 42/42 non-integration tests green across 9 files.
+- [x] 14/14 PostgreSQL integration tests green across 3 files on PostgreSQL 17.
+- [x] Database migrations `0001` and `0002` plus their SQL smoke checks green.
+
+These gates prove that the deterministic/event-driven simulation kernel can run small physiological populations, recover exactly from worker/process crashes, and maintain durable recurring or one-time commitments without a global NPC tick. They do **not** yet prove coherent social lives, economy, memory, planning or LLM-driven behavior.
 
 ## Next implementation milestones
 
-- [ ] Basic recurring routines and concrete commitments using scheduled events.
-- [ ] Ledger economy, employment and housing foundations.
+- [ ] Double-entry ledger economy with integer minor units and idempotent transfers.
+- [ ] Employment contracts, work commitments and crash-safe salary posting.
+- [ ] Housing/tenancy foundations and rent commitments.
 - [ ] Belief/perception and social-state foundations.
 - [ ] Memory storage/retrieval and Nomic embedding integration.
 - [ ] Ambiguous-choice cognition integration using mock/replay first, Granite second.
