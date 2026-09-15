@@ -42,14 +42,14 @@ CREATE INDEX memories_source_event_idx
   ON memories (world_id, source_event_id)
   WHERE source_event_id IS NOT NULL;
 
-CREATE OR REPLACE FUNCTION hobbo_valid_embedding(values DOUBLE PRECISION[])
+CREATE OR REPLACE FUNCTION hobbo_valid_embedding(embedding_values DOUBLE PRECISION[])
 RETURNS BOOLEAN
 LANGUAGE SQL
 IMMUTABLE
 PARALLEL SAFE
 AS $$
   SELECT
-    cardinality(values) > 0
+    cardinality(embedding_values) > 0
     AND COALESCE(
       bool_and(
         value <> 'NaN'::DOUBLE PRECISION
@@ -59,7 +59,7 @@ AS $$
       FALSE
     )
     AND COALESCE(bool_or(value <> 0::DOUBLE PRECISION), FALSE)
-  FROM unnest(values) AS value;
+  FROM unnest(embedding_values) AS value;
 $$;
 
 CREATE TABLE memory_embeddings (
