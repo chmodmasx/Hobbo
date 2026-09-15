@@ -61,6 +61,7 @@
 - [x] Failed outcome transactions leave no partial world-time or event-history mutations.
 - [x] Crash/restart integration test opens a fresh PostgreSQL pool with no in-memory scheduler state and resumes deterministically.
 - [x] Continuous and crash/restarted 10-step simulations produce identical event history and final world sequence/time.
+- [x] Event append concurrency relies on the explicit world-row lock under `READ COMMITTED`; redundant `SERIALIZABLE` aborts were removed.
 
 ## Headless physiology gates completed
 
@@ -100,18 +101,34 @@
 - [x] Disabling a routine allows the already-materialized occurrence to resolve without generating another.
 - [x] Destructive PostgreSQL integration fixtures are serialized at file level while explicit concurrency tests remain concurrent inside each test.
 
+## Durable ledger economy completed
+
+- [x] Money amounts use signed `bigint` minor units; floating point is not used for balances or postings.
+- [x] Pure double-entry validation requires at least two non-zero lines whose signed sum is exactly zero.
+- [x] Account balances are derived from immutable posted entries rather than a mutable `money` column.
+- [x] PostgreSQL tables for ledger accounts, transactions and entries.
+- [x] Deferred PostgreSQL constraint trigger prevents an unbalanced or cross-currency transaction from becoming `posted`.
+- [x] Posted transactions and their entries are immutable, including against direct SQL mutation or appended lines.
+- [x] Transfer repository locks affected accounts in stable ID order and checks source balance after acquiring the lock.
+- [x] Non-negative accounts cannot be concurrently double-spent; only one conflicting payment can succeed.
+- [x] System/credit-style accounts may explicitly allow negative balances instead of bypassing the ledger.
+- [x] `(world_id, idempotency_key)` is unique and additionally serialized by an advisory transaction lock.
+- [x] Same idempotency key + same semantic transfer returns the original posted transaction even from a fresh PostgreSQL pool.
+- [x] Same idempotency key + changed amount/account/time/currency/type is rejected.
+- [x] Currency mismatches are rejected before posting.
+- [x] Migration `0003_ledger.sql`, SQL smoke checks and six real PostgreSQL ledger integration cases are green.
+
 ### Current CI gate
 
 - [x] TypeScript typecheck green.
-- [x] 42/42 non-integration tests green across 9 files.
-- [x] 14/14 PostgreSQL integration tests green across 3 files on PostgreSQL 17.
-- [x] Database migrations `0001` and `0002` plus their SQL smoke checks green.
+- [x] Non-integration test suite green, including economy property tests.
+- [x] 20/20 PostgreSQL integration tests green across 4 files on PostgreSQL 17.
+- [x] Database migrations `0001` through `0003` plus their SQL smoke checks green.
 
-These gates prove that the deterministic/event-driven simulation kernel can run small physiological populations, recover exactly from worker/process crashes, and maintain durable recurring or one-time commitments without a global NPC tick. They do **not** yet prove coherent social lives, economy, memory, planning or LLM-driven behavior.
+These gates prove that the deterministic/event-driven kernel can run small physiological populations, recover exactly from worker/process crashes, maintain durable recurring or one-time commitments, and conserve money through an idempotent double-entry ledger under concurrent spending. They do **not** yet prove coherent employment, housing, social lives, memory, planning or LLM-driven behavior.
 
 ## Next implementation milestones
 
-- [ ] Double-entry ledger economy with integer minor units and idempotent transfers.
 - [ ] Employment contracts, work commitments and crash-safe salary posting.
 - [ ] Housing/tenancy foundations and rent commitments.
 - [ ] Belief/perception and social-state foundations.
