@@ -12,3 +12,4 @@ export * from "./social-repository.ts";
 export * from "./memory-repository.ts";
 export * from "./conversation-repository.ts";
 export * from "./conversation-delivery-processor.ts";
+export * from "./person-repository.ts";
