@@ -205,7 +205,7 @@ async function lockAccounts(
 }
 
 async function accountBalanceInTransaction(
-  client: PoolClient,
+  client: Pool | PoolClient,
   worldId: WorldId,
   accountId: LedgerAccountId,
 ): Promise<bigint> {
@@ -273,11 +273,7 @@ export class PostgresLedgerRepository {
     if (account === undefined) {
       throw new DomainInvariantError(`Ledger account does not exist: ${accountId}`);
     }
-    return accountBalanceInTransaction(
-      this.#pool as unknown as PoolClient,
-      worldId,
-      accountId,
-    );
+    return accountBalanceInTransaction(this.#pool, worldId, accountId);
   }
 
   async getByIdempotencyKey(
