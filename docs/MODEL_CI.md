@@ -34,7 +34,16 @@ The smoke test starts an OpenAI-compatible llama.cpp server and verifies schema-
 
 `nomic-ai/nomic-embed-text-v2-moe-GGUF`, `Q4_K_M`.
 
-The embedding smoke test starts llama.cpp in embedding mode and verifies that the OpenAI-compatible embeddings endpoint returns two finite vectors of equal, non-zero dimensionality.
+The embedding smoke test starts llama.cpp in embedding mode and performs two layers of validation:
+
+1. a raw OpenAI-compatible `/v1/embeddings` request verifies that llama.cpp returns finite vectors and exactly 768 dimensions for the locked Nomic model;
+2. `packages/ai-provider/test/nomic-live.integration.test.ts` calls the production `NomicEmbeddingProvider` against that same live llama.cpp process and real GGUF.
+
+The production provider applies Nomic's `search_query:` and `search_document:` prefixes automatically, validates response counts and indices, rejects non-finite/zero or dimension-mismatched vectors, and exposes the vectors under the model identity used by durable memory storage.
+
+This split is intentional: the raw request isolates llama.cpp/model compatibility, while the live provider test closes the application-level path actually used by Hobbo.
+
+Changes under `packages/ai-provider/**`, `scripts/ci/**`, `models/**` or the model-smoke workflow itself trigger this workflow so provider regressions cannot bypass the real GGUF gate.
 
 ## Cache invalidation
 
