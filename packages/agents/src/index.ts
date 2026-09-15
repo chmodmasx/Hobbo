@@ -148,3 +148,5 @@ export function consumeFood(
     hungerAfter,
   };
 }
+
+export * from "./actions.ts";
