@@ -118,18 +118,32 @@
 - [x] Currency mismatches are rejected before posting.
 - [x] Migration `0003_ledger.sql`, SQL smoke checks and six real PostgreSQL ledger integration cases are green.
 
+## Employment and crash-safe salary posting completed
+
+- [x] Persistent employment contracts bind employer, employee, payroll accounts, currency, wage, start time and recurring work routine.
+- [x] Employment terms validate distinct parties/accounts, positive integer wages and valid `(period, phase)` work schedules.
+- [x] Contract creation, work-routine creation and first concrete shift materialization commit atomically.
+- [x] Work shifts reuse the generic recurring commitment/scheduler path; employment does not introduce a second scheduler.
+- [x] Completing a work shift and salary posting are intentionally a re-entrant saga rather than one oversized transaction.
+- [x] Shift fulfillment remains durable even if payroll subsequently fails; a worker's completed work is never rolled back by employer insolvency.
+- [x] Salary transaction IDs and idempotency keys are derived deterministically from `(employment, concrete shift)`.
+- [x] A crash after shift fulfillment but before salary posting can resume from a fresh PostgreSQL pool and post exactly one salary.
+- [x] A crash/retry after salary posting returns the original ledger transaction rather than paying twice.
+- [x] Employer insolvency leaves the fulfilled shift and next work commitment intact, creates no partial salary transaction, and can be paid later by retry.
+- [x] Payroll account currency mismatch aborts contract creation without leaving a routine or commitment behind.
+- [x] Migration `0004_employment.sql`, SQL smoke checks and five real PostgreSQL employment integration cases are green.
+
 ### Current CI gate
 
 - [x] TypeScript typecheck green.
-- [x] Non-integration test suite green, including economy property tests.
-- [x] 20/20 PostgreSQL integration tests green across 4 files on PostgreSQL 17.
-- [x] Database migrations `0001` through `0003` plus their SQL smoke checks green.
+- [x] 50/50 non-integration tests green, including economy/employment contract tests.
+- [x] 25/25 PostgreSQL integration tests green across 5 files on PostgreSQL 17.
+- [x] Database migrations `0001` through `0004` plus their SQL smoke checks green.
 
-These gates prove that the deterministic/event-driven kernel can run small physiological populations, recover exactly from worker/process crashes, maintain durable recurring or one-time commitments, and conserve money through an idempotent double-entry ledger under concurrent spending. They do **not** yet prove coherent employment, housing, social lives, memory, planning or LLM-driven behavior.
+These gates prove that the deterministic/event-driven kernel can run small physiological populations, recover exactly from worker/process crashes, maintain durable recurring or one-time commitments, conserve money under concurrent spending, and model work with crash-safe exactly-once salary effects. They do **not** yet prove coherent housing, social lives, memory, planning or LLM-driven behavior.
 
 ## Next implementation milestones
 
-- [ ] Employment contracts, work commitments and crash-safe salary posting.
 - [ ] Housing/tenancy foundations and rent commitments.
 - [ ] Belief/perception and social-state foundations.
 - [ ] Memory storage/retrieval and Nomic embedding integration.
