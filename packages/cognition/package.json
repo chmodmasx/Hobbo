@@ -1,0 +1,17 @@
+{
+  "name": "@hobbo/cognition",
+  "version": "0.0.0",
+  "private": true,
+  "type": "module",
+  "exports": {
+    ".": "./src/index.ts"
+  },
+  "scripts": {
+    "typecheck": "tsc -p tsconfig.json"
+  },
+  "dependencies": {
+    "@hobbo/ai-provider": "workspace:*",
+    "@hobbo/domain": "workspace:*",
+    "@hobbo/memory": "workspace:*"
+  }
+}
