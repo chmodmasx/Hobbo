@@ -7,3 +7,4 @@ export * from "./cognition-repository.ts";
 export * from "./routine-repository.ts";
 export * from "./ledger-repository.ts";
 export * from "./employment-repository.ts";
+export * from "./housing-repository.ts";
