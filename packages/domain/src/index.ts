@@ -11,6 +11,9 @@ export type AffordanceId = Brand<string, "AffordanceId">;
 export type CognitionRequestId = Brand<string, "CognitionRequestId">;
 export type RoutineId = Brand<string, "RoutineId">;
 export type CommitmentId = Brand<string, "CommitmentId">;
+export type LedgerAccountId = Brand<string, "LedgerAccountId">;
+export type LedgerTransactionId = Brand<string, "LedgerTransactionId">;
+export type EmploymentId = Brand<string, "EmploymentId">;
 
 export type SimTime = Brand<bigint, "SimTime">;
 export type SimDuration = Brand<bigint, "SimDuration">;
@@ -175,4 +178,16 @@ export function asRoutineId(value: string): RoutineId {
 
 export function asCommitmentId(value: string): CommitmentId {
   return value as CommitmentId;
+}
+
+export function asLedgerAccountId(value: string): LedgerAccountId {
+  return value as LedgerAccountId;
+}
+
+export function asLedgerTransactionId(value: string): LedgerTransactionId {
+  return value as LedgerTransactionId;
+}
+
+export function asEmploymentId(value: string): EmploymentId {
+  return value as EmploymentId;
 }
