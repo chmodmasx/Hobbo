@@ -14,6 +14,7 @@ import {
   type WorldId,
 } from "@hobbo/domain";
 import type { Pool, QueryResultRow } from "pg";
+import { toJsonParameter } from "./json.ts";
 
 export type CognitionRunStatus = "queued" | "running" | "completed" | "failed";
 
@@ -173,10 +174,10 @@ export class PostgresCognitionRepository {
         input.providerId,
         input.modelId ?? null,
         input.requestHash,
-        input.requestPayload,
-        input.affordances,
-        input.samplingConfig ?? {},
-        input.schemaConfig ?? {},
+        toJsonParameter(input.requestPayload, "cognition request_payload"),
+        toJsonParameter(input.affordances, "cognition affordances"),
+        toJsonParameter(input.samplingConfig ?? {}, "cognition sampling_config"),
+        toJsonParameter(input.schemaConfig ?? {}, "cognition schema_config"),
       ],
     );
     const row = result.rows[0];
@@ -231,7 +232,7 @@ export class PostgresCognitionRepository {
       [
         worldId,
         requestId,
-        output.decision,
+        toJsonParameter(output.decision, "cognition decision"),
         output.rawResponse ?? null,
         output.promptTokens ?? null,
         output.completionTokens ?? null,
