@@ -1,0 +1,23 @@
+{
+  "name": "@hobbo/runtime",
+  "version": "0.0.0",
+  "private": true,
+  "type": "module",
+  "exports": {
+    ".": "./src/index.ts"
+  },
+  "scripts": {
+    "typecheck": "tsc -p tsconfig.json",
+    "test:integration": "vitest run test/*.integration.test.ts --maxWorkers=1 --no-file-parallelism"
+  },
+  "dependencies": {
+    "@hobbo/agents": "workspace:*",
+    "@hobbo/database": "workspace:*",
+    "@hobbo/domain": "workspace:*",
+    "@hobbo/simulation": "workspace:*",
+    "pg": "8.23.0"
+  },
+  "devDependencies": {
+    "@types/pg": "8.23.1"
+  }
+}
