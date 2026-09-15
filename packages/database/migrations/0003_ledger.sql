@@ -109,7 +109,7 @@ END;
 $$;
 
 CREATE CONSTRAINT TRIGGER ledger_transaction_balance_guard
-AFTER UPDATE ON ledger_transactions
+AFTER INSERT OR UPDATE ON ledger_transactions
 DEFERRABLE INITIALLY DEFERRED
 FOR EACH ROW
 EXECUTE FUNCTION validate_posted_ledger_transaction();
@@ -118,6 +118,9 @@ CREATE OR REPLACE FUNCTION prevent_posted_ledger_mutation()
 RETURNS TRIGGER
 LANGUAGE plpgsql
 AS $$
+DECLARE
+  target_world_id TEXT;
+  target_transaction_id TEXT;
 BEGIN
   IF TG_TABLE_NAME = 'ledger_transactions' THEN
     IF OLD.status = 'posted' THEN
@@ -130,11 +133,19 @@ BEGIN
     RETURN NEW;
   END IF;
 
+  IF TG_OP = 'INSERT' THEN
+    target_world_id := NEW.world_id;
+    target_transaction_id := NEW.transaction_id;
+  ELSE
+    target_world_id := OLD.world_id;
+    target_transaction_id := OLD.transaction_id;
+  END IF;
+
   IF EXISTS (
     SELECT 1
       FROM ledger_transactions t
-     WHERE t.world_id = OLD.world_id
-       AND t.id = OLD.transaction_id
+     WHERE t.world_id = target_world_id
+       AND t.id = target_transaction_id
        AND t.status = 'posted'
   ) THEN
     RAISE EXCEPTION 'entries of posted ledger transactions are immutable'
@@ -154,7 +165,7 @@ FOR EACH ROW
 EXECUTE FUNCTION prevent_posted_ledger_mutation();
 
 CREATE TRIGGER ledger_entries_immutable_after_post
-BEFORE UPDATE OR DELETE ON ledger_entries
+BEFORE INSERT OR UPDATE OR DELETE ON ledger_entries
 FOR EACH ROW
 EXECUTE FUNCTION prevent_posted_ledger_mutation();
 
