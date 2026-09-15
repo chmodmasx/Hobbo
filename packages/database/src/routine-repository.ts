@@ -164,6 +164,70 @@ async function insertCommitmentAndSchedule<TPayload>(
   return mapCommitment(row) as PersistedCommitment<TPayload>;
 }
 
+export async function createRoutineInTransaction<TPayload>(
+  client: PoolClient,
+  worldId: WorldId,
+  routine: PeriodicRoutine<TPayload>,
+): Promise<PersistedRoutine<TPayload>> {
+  // Exercise the pure routine invariant validation before persisting the template.
+  nextPeriodicOccurrence(routine, simTime(0), true);
+
+  const result = await client.query<RoutineRow>(
+    `INSERT INTO routines (
+       world_id, id, owner_id, period, phase, kind, payload
+     ) VALUES ($1,$2,$3,$4,$5,$6,$7)
+     RETURNING ${ROUTINE_COLUMNS}`,
+    [
+      worldId,
+      routine.id,
+      routine.ownerId,
+      routine.period.toString(),
+      routine.phase.toString(),
+      routine.kind,
+      toJsonParameter(routine.payload, `routine ${routine.id} payload`),
+    ],
+  );
+  const row = result.rows[0];
+  if (row === undefined) {
+    throw new DomainInvariantError(`Routine insert returned no row: ${routine.id}`);
+  }
+  return mapRoutine(row) as PersistedRoutine<TPayload>;
+}
+
+export async function materializeNextRoutineCommitmentInTransaction<TPayload = unknown>(
+  client: PoolClient,
+  worldId: WorldId,
+  routineId: RoutineId,
+  from: SimTime,
+  includeCurrent = false,
+): Promise<PersistedCommitment<TPayload>> {
+  const persisted = await lockRoutine(client, worldId, routineId);
+  if (!persisted.enabled) {
+    throw new DomainInvariantError(`Routine is disabled: ${routineId}`);
+  }
+
+  const existing = await client.query<CommitmentRow>(
+    `SELECT ${COMMITMENT_COLUMNS}
+       FROM commitments
+      WHERE world_id = $1
+        AND routine_id = $2
+        AND status = 'planned'
+      FOR UPDATE`,
+    [worldId, routineId],
+  );
+  const existingRow = existing.rows[0];
+  if (existingRow !== undefined) {
+    return mapCommitment(existingRow) as PersistedCommitment<TPayload>;
+  }
+
+  const dueAt = nextPeriodicOccurrence(persisted.routine, from, includeCurrent);
+  const commitment = materializeRoutineCommitment(
+    persisted.routine as PeriodicRoutine<TPayload>,
+    dueAt,
+  );
+  return insertCommitmentAndSchedule(client, worldId, commitment);
+}
+
 export class PostgresRoutineRepository {
   readonly #pool: Pool;
 
@@ -175,26 +239,11 @@ export class PostgresRoutineRepository {
     worldId: WorldId,
     routine: PeriodicRoutine<TPayload>,
   ): Promise<PersistedRoutine<TPayload>> {
-    const result = await this.#pool.query<RoutineRow>(
-      `INSERT INTO routines (
-         world_id, id, owner_id, period, phase, kind, payload
-       ) VALUES ($1,$2,$3,$4,$5,$6,$7)
-       RETURNING ${ROUTINE_COLUMNS}`,
-      [
-        worldId,
-        routine.id,
-        routine.ownerId,
-        routine.period.toString(),
-        routine.phase.toString(),
-        routine.kind,
-        toJsonParameter(routine.payload, `routine ${routine.id} payload`),
-      ],
+    return withTransaction(
+      this.#pool,
+      (client) => createRoutineInTransaction(client, worldId, routine),
+      "read committed",
     );
-    const row = result.rows[0];
-    if (row === undefined) {
-      throw new DomainInvariantError(`Routine insert returned no row: ${routine.id}`);
-    }
-    return mapRoutine(row) as PersistedRoutine<TPayload>;
   }
 
   async get(
@@ -238,32 +287,14 @@ export class PostgresRoutineRepository {
   ): Promise<PersistedCommitment> {
     return withTransaction(
       this.#pool,
-      async (client) => {
-        const persisted = await lockRoutine(client, worldId, routineId);
-        if (!persisted.enabled) {
-          throw new DomainInvariantError(`Routine is disabled: ${routineId}`);
-        }
-
-        const existing = await client.query<CommitmentRow>(
-          `SELECT ${COMMITMENT_COLUMNS}
-             FROM commitments
-            WHERE world_id = $1
-              AND routine_id = $2
-              AND status = 'planned'
-            FOR UPDATE`,
-          [worldId, routineId],
-        );
-        const existingRow = existing.rows[0];
-        if (existingRow !== undefined) return mapCommitment(existingRow);
-
-        const dueAt = nextPeriodicOccurrence(
-          persisted.routine,
+      (client) =>
+        materializeNextRoutineCommitmentInTransaction(
+          client,
+          worldId,
+          routineId,
           from,
           includeCurrent,
-        );
-        const commitment = materializeRoutineCommitment(persisted.routine, dueAt);
-        return insertCommitmentAndSchedule(client, worldId, commitment);
-      },
+        ),
       "read committed",
     );
   }
