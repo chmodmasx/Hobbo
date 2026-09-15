@@ -69,21 +69,25 @@ if ! curl --silent --show-error --fail \
   ],
   "response_format": {
     "type": "json_schema",
-    "schema": {
-      "type": "object",
-      "properties": {
-        "affordance_id": {
-          "type": "string",
-          "enum": ["eat_owned_food", "wait"]
+    "json_schema": {
+      "name": "hobbo_decision",
+      "strict": true,
+      "schema": {
+        "type": "object",
+        "properties": {
+          "affordance_id": {
+            "type": "string",
+            "enum": ["eat_owned_food", "wait"]
+          },
+          "intent": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 80
+          }
         },
-        "intent": {
-          "type": "string",
-          "minLength": 1,
-          "maxLength": 80
-        }
-      },
-      "required": ["affordance_id", "intent"],
-      "additionalProperties": false
+        "required": ["affordance_id", "intent"],
+        "additionalProperties": false
+      }
     }
   }
 }
