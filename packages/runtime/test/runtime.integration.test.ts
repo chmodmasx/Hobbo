@@ -17,6 +17,7 @@ import {
 import {
   SIM_DAY,
   SIM_HOUR,
+  asCorrelationId,
   asEmploymentId,
   asEntityId,
   asHousingUnitId,
@@ -404,7 +405,7 @@ describe("durable scheduled-event runtime", () => {
       dueAt: simTime(10),
       type: "unknown.runtime.event",
       payload: {},
-      correlationId: "runtime-unknown" as never,
+      correlationId: asCorrelationId("runtime-unknown"),
     });
 
     const worker = new DurableScheduledEventWorker(
