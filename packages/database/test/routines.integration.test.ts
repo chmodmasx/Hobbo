@@ -133,6 +133,44 @@ describe("durable recurring routines", () => {
     ]);
   });
 
+  it("marks a missed occurrence and keeps the recurring phase anchored", async () => {
+    const worldId = asWorldId("routine-missed-world");
+    await worlds.create(worldId);
+    const routine = dailyRoutine("missed-daily-work");
+    await routines.create(worldId, routine);
+    const first = await routines.materializeNext(worldId, routine.id, simTime(0));
+
+    await schedules.claimDue(
+      worldId,
+      first.commitment.dueAt,
+      "miss-worker",
+      1,
+    );
+    const result = await routines.missClaimedAndScheduleNext({
+      worldId,
+      commitmentId: first.commitment.id,
+      workerId: "miss-worker",
+      at: first.commitment.dueAt,
+      reason: "sleeping",
+    });
+
+    expect(result.missed.commitment.status).toBe("missed");
+    expect(result.missed.commitment.resolvedAt).toBe(first.commitment.dueAt);
+    expect(result.next?.commitment.dueAt).toBe(
+      first.commitment.dueAt + BigInt(SIM_DAY),
+    );
+
+    const history = await events.list(worldId);
+    expect(history).toHaveLength(1);
+    expect(history[0]?.type).toBe("commitment.missed");
+    expect(history[0]?.payload).toEqual({
+      commitmentId: String(first.commitment.id),
+      routineId: String(routine.id),
+      kind: routine.kind,
+      reason: "sleeping",
+    });
+  });
+
   it("rolls back fulfillment and next materialization when worker ownership is wrong", async () => {
     const worldId = asWorldId("routine-rollback-world");
     await worlds.create(worldId);
