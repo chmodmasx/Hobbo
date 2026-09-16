@@ -29,6 +29,7 @@ import {
   DomainInvariantError,
   addSimTime,
   asCommitmentId,
+  asCorrelationId,
   asEmploymentId,
   asEntityId,
   asEventId,
@@ -217,9 +218,9 @@ function hungerScheduledEvent(
     dueAt: addSimTime(from, wait),
     type: PERSON_HUNGER_THRESHOLD_EVENT_TYPE,
     payload: personPayload(person.id),
-    correlationId: person.hunger.recordedAt === from
-      ? (String(`runtime:hunger:${person.id}:${person.mealsEaten}`) as never)
-      : (String(`runtime:hunger:${person.id}:${person.mealsEaten}`) as never),
+    correlationId: asCorrelationId(
+      `runtime:hunger:${person.id}:${person.mealsEaten}`,
+    ),
   };
 }
 
@@ -236,7 +237,7 @@ function sleepScheduledEvent(
     dueAt: addSimTime(from, wait),
     type: PERSON_ENERGY_LOW_EVENT_TYPE,
     payload: personPayload(person.id),
-    correlationId: String(`runtime:sleep:${person.id}:${session}`) as never,
+    correlationId: asCorrelationId(`runtime:sleep:${person.id}:${session}`),
   };
 }
 
@@ -254,9 +255,9 @@ function wakeScheduledEvent(
     dueAt: addSimTime(from, wait),
     type: PERSON_ENERGY_RECOVERED_EVENT_TYPE,
     payload: personPayload(person.id),
-    correlationId: String(
+    correlationId: asCorrelationId(
       `runtime:wake:${person.id}:${person.sleepSessions}`,
-    ) as never,
+    ),
   };
 }
 
@@ -499,7 +500,7 @@ export class DurablePhysiologyRuntime {
   }
 }
 
-interface ParsedCommitmentDue {
+export interface ParsedCommitmentDue {
   readonly commitmentId: string;
   readonly ownerId: string;
   readonly kind: string;
