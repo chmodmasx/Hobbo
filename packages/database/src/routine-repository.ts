@@ -227,6 +227,120 @@ export async function materializeNextRoutineCommitmentInTransaction<TPayload = u
   return insertCommitmentAndSchedule(client, worldId, commitment);
 }
 
+type ClaimResolution = "fulfilled" | "missed";
+
+async function resolveClaimedAndScheduleNext(input: {
+  readonly pool: Pool;
+  readonly worldId: WorldId;
+  readonly commitmentId: CommitmentId;
+  readonly workerId: string;
+  readonly at: SimTime;
+  readonly resolution: ClaimResolution;
+  readonly reason?: string;
+}): Promise<{
+  readonly resolved: PersistedCommitment;
+  readonly next?: PersistedCommitment;
+}> {
+  if (input.resolution === "missed") {
+    if (input.reason === undefined || input.reason.trim().length === 0) {
+      throw new DomainInvariantError("Missed commitment reason cannot be blank");
+    }
+  }
+
+  return withTransaction(input.pool, async (client) => {
+    const currentResult = await client.query<CommitmentRow>(
+      `SELECT ${COMMITMENT_COLUMNS}
+         FROM commitments
+        WHERE world_id = $1 AND id = $2
+        FOR UPDATE`,
+      [input.worldId, input.commitmentId],
+    );
+    const currentRow = currentResult.rows[0];
+    if (currentRow === undefined) {
+      throw new DomainInvariantError(`Commitment does not exist: ${input.commitmentId}`);
+    }
+    const current = mapCommitment(currentRow);
+    if (current.commitment.status !== "planned") {
+      throw new DomainInvariantError(
+        `Commitment ${input.commitmentId} is already ${current.commitment.status}`,
+      );
+    }
+    if (current.scheduledEventId === undefined) {
+      throw new DomainInvariantError(
+        `Commitment ${input.commitmentId} has no scheduled event`,
+      );
+    }
+    if (input.at < current.commitment.dueAt) {
+      throw new DomainInvariantError(
+        `Commitment ${input.commitmentId} cannot be ${input.resolution} before ${current.commitment.dueAt}; received ${input.at}`,
+      );
+    }
+
+    await advanceWorldTimeInTransaction(client, input.worldId, input.at);
+
+    const update = await client.query<CommitmentRow>(
+      `UPDATE commitments
+          SET status = $3, resolved_at = $4, updated_at = now()
+        WHERE world_id = $1 AND id = $2 AND status = 'planned'
+      RETURNING ${COMMITMENT_COLUMNS}`,
+      [
+        input.worldId,
+        input.commitmentId,
+        input.resolution,
+        input.at.toString(),
+      ],
+    );
+    const resolvedRow = update.rows[0];
+    if (resolvedRow === undefined) {
+      throw new DomainInvariantError(`Commitment transition failed: ${input.commitmentId}`);
+    }
+    const resolved = mapCommitment(resolvedRow);
+
+    await appendDomainEventsInTransaction(client, input.worldId, [
+      {
+        id: asEventId(`commitment-${input.resolution}:${input.commitmentId}`),
+        worldId: input.worldId,
+        simTime: input.at,
+        type: `commitment.${input.resolution}`,
+        actorId: resolved.commitment.ownerId,
+        payload: {
+          commitmentId: String(input.commitmentId),
+          routineId:
+            resolved.commitment.routineId === undefined
+              ? null
+              : String(resolved.commitment.routineId),
+          kind: resolved.commitment.kind,
+          ...(input.resolution === "missed" ? { reason: input.reason } : {}),
+        },
+        correlationId: resolved.commitment.correlationId,
+      },
+    ]);
+
+    await completeScheduledEventInTransaction(
+      client,
+      input.worldId,
+      current.scheduledEventId,
+      input.workerId,
+    );
+
+    let next: PersistedCommitment | undefined;
+    const routineId = resolved.commitment.routineId;
+    if (routineId !== undefined) {
+      const routine = await lockRoutine(client, input.worldId, routineId);
+      if (routine.enabled) {
+        const dueAt = nextPeriodicOccurrence(routine.routine, resolved.commitment.dueAt, false);
+        next = await insertCommitmentAndSchedule(
+          client,
+          input.worldId,
+          materializeRoutineCommitment(routine.routine, dueAt),
+        );
+      }
+    }
+
+    return { resolved, ...(next === undefined ? {} : { next }) };
+  });
+}
+
 export class PostgresRoutineRepository {
   readonly #pool: Pool;
 
@@ -343,93 +457,35 @@ export class PostgresRoutineRepository {
     readonly fulfilled: PersistedCommitment;
     readonly next?: PersistedCommitment;
   }> {
-    return withTransaction(this.#pool, async (client) => {
-      const currentResult = await client.query<CommitmentRow>(
-        `SELECT ${COMMITMENT_COLUMNS}
-           FROM commitments
-          WHERE world_id = $1 AND id = $2
-          FOR UPDATE`,
-        [input.worldId, input.commitmentId],
-      );
-      const currentRow = currentResult.rows[0];
-      if (currentRow === undefined) {
-        throw new DomainInvariantError(
-          `Commitment does not exist: ${input.commitmentId}`,
-        );
-      }
-      const current = mapCommitment(currentRow);
-      if (current.commitment.status !== "planned") {
-        throw new DomainInvariantError(
-          `Commitment ${input.commitmentId} is already ${current.commitment.status}`,
-        );
-      }
-      if (current.scheduledEventId === undefined) {
-        throw new DomainInvariantError(
-          `Commitment ${input.commitmentId} has no scheduled event`,
-        );
-      }
-      if (input.at < current.commitment.dueAt) {
-        throw new DomainInvariantError(
-          `Commitment ${input.commitmentId} cannot be fulfilled before ${current.commitment.dueAt}; received ${input.at}`,
-        );
-      }
-
-      await advanceWorldTimeInTransaction(client, input.worldId, input.at);
-
-      const update = await client.query<CommitmentRow>(
-        `UPDATE commitments
-            SET status = 'fulfilled', resolved_at = $3, updated_at = now()
-          WHERE world_id = $1 AND id = $2 AND status = 'planned'
-        RETURNING ${COMMITMENT_COLUMNS}`,
-        [input.worldId, input.commitmentId, input.at.toString()],
-      );
-      const fulfilledRow = update.rows[0];
-      if (fulfilledRow === undefined) {
-        throw new DomainInvariantError(`Commitment transition failed: ${input.commitmentId}`);
-      }
-      const fulfilled = mapCommitment(fulfilledRow);
-
-      await appendDomainEventsInTransaction(client, input.worldId, [
-        {
-          id: asEventId(`commitment-fulfilled:${input.commitmentId}`),
-          worldId: input.worldId,
-          simTime: input.at,
-          type: "commitment.fulfilled",
-          actorId: fulfilled.commitment.ownerId,
-          payload: {
-            commitmentId: String(input.commitmentId),
-            routineId:
-              fulfilled.commitment.routineId === undefined
-                ? null
-                : String(fulfilled.commitment.routineId),
-            kind: fulfilled.commitment.kind,
-          },
-          correlationId: fulfilled.commitment.correlationId,
-        },
-      ]);
-
-      await completeScheduledEventInTransaction(
-        client,
-        input.worldId,
-        current.scheduledEventId,
-        input.workerId,
-      );
-
-      let next: PersistedCommitment | undefined;
-      const routineId = fulfilled.commitment.routineId;
-      if (routineId !== undefined) {
-        const routine = await lockRoutine(client, input.worldId, routineId);
-        if (routine.enabled) {
-          const dueAt = nextPeriodicOccurrence(routine.routine, fulfilled.commitment.dueAt, false);
-          next = await insertCommitmentAndSchedule(
-            client,
-            input.worldId,
-            materializeRoutineCommitment(routine.routine, dueAt),
-          );
-        }
-      }
-
-      return { fulfilled, ...(next === undefined ? {} : { next }) };
+    const result = await resolveClaimedAndScheduleNext({
+      pool: this.#pool,
+      ...input,
+      resolution: "fulfilled",
     });
+    return {
+      fulfilled: result.resolved,
+      ...(result.next === undefined ? {} : { next: result.next }),
+    };
+  }
+
+  async missClaimedAndScheduleNext(input: {
+    readonly worldId: WorldId;
+    readonly commitmentId: CommitmentId;
+    readonly workerId: string;
+    readonly at: SimTime;
+    readonly reason: string;
+  }): Promise<{
+    readonly missed: PersistedCommitment;
+    readonly next?: PersistedCommitment;
+  }> {
+    const result = await resolveClaimedAndScheduleNext({
+      pool: this.#pool,
+      ...input,
+      resolution: "missed",
+    });
+    return {
+      missed: result.resolved,
+      ...(result.next === undefined ? {} : { next: result.next }),
+    };
   }
 }
