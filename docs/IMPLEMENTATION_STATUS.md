@@ -104,6 +104,7 @@
 - [x] Concurrent `materializeNext()` calls converge on the same concrete occurrence.
 - [x] Fulfillment, domain-event append, scheduled-event completion and next-occurrence materialization are transactional.
 - [x] Commitments may be fulfilled after their due time but never before it; recurring schedules stay anchored to the original phase rather than drifting after a late fulfillment.
+- [x] Generic claimed commitments may resolve as `missed` with an explicit reason while still completing the scheduler claim and materializing the next occurrence at the original phase.
 - [x] Disabling a routine allows the already-materialized occurrence to resolve without generating another.
 - [x] Destructive PostgreSQL integration fixtures are serialized at file level while explicit concurrency tests remain concurrent inside each test.
 
@@ -258,20 +259,43 @@
 - [x] The restarted run records exactly one additional scheduler claim attempt while semantic state remains identical.
 - [x] The gate exercises 600 salary postings, 20 rent postings and 620 fulfilled commitments without duplicate financial effects.
 
+## Production scheduled-event runtime and durable integrated-life gate completed
+
+- [x] `@hobbo/runtime` is a separate orchestration package; persistence remains in `@hobbo/database` and pure simulation/domain rules remain outside the runtime.
+- [x] `DurableScheduledEventWorker` repeatedly claims only the scheduler's current temporal frontier and dispatches through an explicit event-type registry.
+- [x] Unknown event types fail closed: the worker throws and leaves the claimed lease recoverable instead of silently discarding causal work.
+- [x] `DurableCommitmentDispatcher` routes generic `commitment.due` events to kind-specific handlers without hardcoding every future commitment type into the scheduler.
+- [x] Physiology handlers reuse the shared action registry plus pure `@hobbo/agents` transitions for eat/sleep/wake decisions.
+- [x] Runtime hunger events that arrive during sleep produce a durable `person.hunger_deferred` event and retry at the wake frontier.
+- [x] Employment shifts now interact with body state: a shift due while the employee is sleeping resolves as `commitment.missed` and does not post salary; awake shifts settle normally.
+- [x] Rent remains an independent economic obligation and is settled regardless of sleep state.
+- [x] The runtime integration gate drives 20 durable agents for 30 simulated days through one production-style dispatcher, combining physiology, inventory, work, missed shifts, salary, housing, rent, commitments, domain events and future scheduling.
+- [x] The gate intentionally abandons one scheduler lease at the midpoint, closes the process pool, requeues from a fresh pool and proves exact semantic equality with the uninterrupted control run.
+- [x] Restart equality covers world time, body state, inventory consumption, balances, all commitments, ledger transactions, exact domain-event history and pending future scheduler state; only the expected single extra operational claim attempt differs.
+- [x] The gate proves both fulfilled and missed work occur, salary count equals fulfilled shifts, all twenty rent obligations settle, hunger deferrals occur, body bounds remain valid and physical item totals are conserved.
+- [x] `@hobbo/runtime` is now part of normal workspace typecheck/unit CI and has a dedicated PostgreSQL runtime-integration step after repository integration tests.
+
+### Runtime concurrency boundary
+
+- [x] The production gate proves the safe/default sequential worker path over the durable scheduler.
+- [ ] Multi-worker handling of simultaneous events that can mutate the same person is not yet claimed safe. Before enabling that mode, the runtime needs explicit person/entity affinity or equivalent conflict serialization on top of the scheduler's same-frontier parallelism.
+
 ### Current CI gate
 
-- [x] TypeScript typecheck green across the workspace.
-- [x] 106/106 non-integration tests green across 20 files.
-- [x] 69/69 PostgreSQL integration tests green across 18 files on PostgreSQL 17.
+- [x] TypeScript typecheck green across the 14-project workspace, including `@hobbo/runtime`.
+- [x] 108/108 non-integration tests green across 21 files.
+- [x] 70/70 PostgreSQL database integration tests green across 18 files on PostgreSQL 17.
+- [x] 2/2 PostgreSQL runtime integration tests green, including the 20-agent 30-day integrated-life restart gate.
 - [x] Database migrations `0001` through `0009` plus all SQL smoke checks green.
 - [x] 20-agent, 30-day durable physiology restart gate green.
 - [x] 20-agent, 30-day durable employment/rent restart gate green.
+- [x] 20-agent, 30-day durable integrated runtime gate green.
 - [x] Scheduler temporal-frontier concurrency gate green.
 - [x] Real Granite cognition and Nomic embedding GGUF smoke tests green through pinned llama.cpp.
 - [x] Real Granite cognition smoke passes through `GraniteCognitiveProvider`, not only the raw endpoint request.
 - [x] Real Nomic embedding smoke passes through `NomicEmbeddingProvider`, not only the raw endpoint request.
 
-These gates prove that the deterministic/event-driven kernel can run physiological populations, recover exactly from worker/process crashes, persist body and physical inventory state, maintain durable recurring or one-time commitments, conserve money under concurrent spending, model employment and housing with crash-safe exactly-once financial effects, maintain private beliefs plus directional social state without conflating them with objective world truth, persist/retrieve private agent memories with deterministic semantic ranking, execute bounded ambiguous LLM choices with complete durable provenance and replay, and propagate conversational information/rumors into listener-specific evidence, beliefs, memories and relationships without leaking internal truth metadata. Two independent 20-agent, 30-day PostgreSQL population gates now prove restart-equivalent physiology/inventory and economy/housing histories. They do **not** yet prove that all of those systems remain coherent when driven together by one production scheduled-event runtime, nor do they yet prove sustained LLM-generated dialogue, long-term planning or coherent long-running social lives across the full population.
+The deterministic/event-driven kernel is now proven not only in isolated subsystem gates but also through a shared durable production-style runtime: body/inventory, work, missed obligations, salary, housing/rent, commitments, event history and future scheduling remain coherent and restart-equivalent across one 20-agent, 30-day timeline. The remaining major gap before visual/content work is social life at population scale: durable conversations, memories, private beliefs and relationships exist individually, but they are not yet driven together for weeks by the production runtime. Sustained LLM-generated dialogue, long-term planning/reflection and multi-worker same-person concurrency also remain unproven.
 
 ## Next implementation milestones
 
@@ -279,11 +303,12 @@ These gates prove that the deterministic/event-driven kernel can run physiologic
 - [x] Ambiguous-choice cognition integration using mock/replay first, Granite second.
 - [x] Conversation memory and information/rumor propagation.
 - [x] Durable person/body/inventory persistence and 20-agent restart gate.
-- [ ] Production scheduled-event dispatcher/worker shared by integrated simulation runs.
-- [ ] 20-agent durable integrated-life gate combining physiology, employment, housing and commitments on one timeline.
-- [ ] 20-agent long-running social simulation gate.
+- [x] Production scheduled-event dispatcher/worker shared by integrated simulation runs.
+- [x] 20-agent durable integrated-life gate combining physiology, employment, housing and commitments on one timeline.
+- [ ] 20-agent long-running social simulation gate driven by `@hobbo/runtime`.
 - [ ] Long-term goals/plans and reflection over multi-day histories.
 - [ ] Sustained LLM-generated dialogue using the durable conversation substrate.
+- [ ] Explicit same-person affinity/serialization before multi-worker runtime mode.
 - [ ] Minimal Sprite Forge Blender fixture.
 
 The project should not begin large-scale visual/content work before the long-running social simulation gates are met.
