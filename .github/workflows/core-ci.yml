@@ -101,3 +101,6 @@ jobs:
 
       - name: Run repository integration tests
         run: pnpm --filter @hobbo/database test:integration
+
+      - name: Run runtime integration tests
+        run: pnpm --filter @hobbo/runtime test:integration
