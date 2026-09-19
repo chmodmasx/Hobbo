@@ -16,6 +16,7 @@
     "@hobbo/conversation": "workspace:*",
     "@hobbo/database": "workspace:*",
     "@hobbo/domain": "workspace:*",
+    "@hobbo/planning": "workspace:*",
     "@hobbo/simulation": "workspace:*",
     "pg": "8.23.0"
   },
