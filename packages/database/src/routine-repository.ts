@@ -448,6 +448,36 @@ export class PostgresRoutineRepository {
     return row === undefined ? undefined : mapCommitment(row);
   }
 
+  async listPlannedForOwner(input: {
+    readonly worldId: WorldId;
+    readonly ownerId: EntityId;
+    readonly from: SimTime;
+    readonly through: SimTime;
+  }): Promise<readonly PersistedCommitment[]> {
+    if (input.through < input.from) {
+      throw new DomainInvariantError(
+        `Commitment query range is backwards: ${input.through} < ${input.from}`,
+      );
+    }
+    const result = await this.#pool.query<CommitmentRow>(
+      `SELECT ${COMMITMENT_COLUMNS}
+         FROM commitments
+        WHERE world_id = $1
+          AND owner_id = $2
+          AND status = 'planned'
+          AND due_at >= $3
+          AND due_at <= $4
+        ORDER BY due_at ASC, id ASC`,
+      [
+        input.worldId,
+        input.ownerId,
+        input.from.toString(),
+        input.through.toString(),
+      ],
+    );
+    return result.rows.map(mapCommitment);
+  }
+
   async fulfillClaimedAndScheduleNext(input: {
     readonly worldId: WorldId;
     readonly commitmentId: CommitmentId;
