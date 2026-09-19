@@ -29,6 +29,7 @@ import {
   PostgresHousingRepository,
   PostgresMemoryRepository,
   PostgresPersonRepository,
+  PostgresPlanningRepository,
   PostgresRoutineRepository,
   PostgresScheduledEventRepository,
   PostgresSocialRepository,
@@ -37,6 +38,7 @@ import {
 import {
   DomainInvariantError,
   SIM_DAY,
+  SIM_HOUR,
   SIM_SECOND,
   addSimTime,
   asCommitmentId,
@@ -49,6 +51,7 @@ import {
   asEventId,
   asMemoryId,
   asPersonId,
+  asPlanRevisionId,
   asScheduledEventId,
   asTenancyId,
   simTime,
@@ -64,6 +67,12 @@ import {
   type CommitmentDuePayload,
   type ScheduledEvent,
 } from "@hobbo/simulation";
+import {
+  derivePlanRevision,
+  type LifeGoal,
+  type PlanningBusyWindow,
+  type PlanRevision,
+} from "@hobbo/planning";
 import type { Pool } from "pg";
 
 export const PERSON_HUNGER_THRESHOLD_EVENT_TYPE = "person.hunger_threshold";
