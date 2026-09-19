@@ -1243,15 +1243,507 @@ export class DurableSocialRuntime {
   }
 }
 
+
+export const PLANNING_REVIEW_EVENT_TYPE = "planning.review";
+
+export interface PlanningRuntimePolicy {
+  readonly period: SimDuration;
+  readonly horizon: SimDuration;
+  readonly reflectionLookback: SimDuration;
+  readonly employmentBusyDuration: SimDuration;
+  readonly socialBusyDuration: SimDuration;
+  readonly wakeThreshold: number;
+}
+
+export const DEFAULT_PLANNING_RUNTIME_POLICY: PlanningRuntimePolicy = {
+  period: SIM_DAY,
+  horizon: (BigInt(SIM_DAY) * 7n) as SimDuration,
+  reflectionLookback: SIM_DAY,
+  employmentBusyDuration: (BigInt(SIM_HOUR) * 4n) as SimDuration,
+  socialBusyDuration: SIM_HOUR,
+  wakeThreshold: DEFAULT_PHYSIOLOGY_RUNTIME_POLICY.wakeThreshold,
+};
+
+interface PlanningReviewPayload {
+  readonly personId: string;
+  readonly occurrence: number;
+  readonly anchorDueAt: string;
+  readonly deferredBy: readonly string[];
+}
+
+function validatePlanningRuntimePolicy(
+  input: Partial<PlanningRuntimePolicy>,
+): PlanningRuntimePolicy {
+  const policy: PlanningRuntimePolicy = {
+    ...DEFAULT_PLANNING_RUNTIME_POLICY,
+    ...input,
+  };
+  if (policy.period <= 0n) {
+    throw new DomainInvariantError("Planning review period must be positive");
+  }
+  if (policy.horizon <= 0n) {
+    throw new DomainInvariantError("Planning horizon must be positive");
+  }
+  if (policy.reflectionLookback <= 0n) {
+    throw new DomainInvariantError(
+      "Planning reflection lookback must be positive",
+    );
+  }
+  if (policy.employmentBusyDuration <= 0n) {
+    throw new DomainInvariantError(
+      "Planning employment busy duration must be positive",
+    );
+  }
+  if (policy.socialBusyDuration <= 0n) {
+    throw new DomainInvariantError(
+      "Planning social busy duration must be positive",
+    );
+  }
+  assertBasisPointThreshold(policy.wakeThreshold, "planning wakeThreshold");
+  return policy;
+}
+
+function parsePlanningReview(
+  scheduled: PersistedScheduledEvent,
+): PlanningReviewPayload {
+  const value = scheduled.event.payload;
+  if (typeof value !== "object" || value === null || Array.isArray(value)) {
+    throw new DomainInvariantError(
+      `Planning event ${scheduled.event.id} payload must be an object`,
+    );
+  }
+  const payload = value as Record<string, unknown>;
+  const deferredBy = payload.deferredBy;
+  if (
+    typeof payload.personId !== "string" ||
+    payload.personId.length === 0 ||
+    typeof payload.occurrence !== "number" ||
+    !Number.isSafeInteger(payload.occurrence) ||
+    payload.occurrence <= 0 ||
+    typeof payload.anchorDueAt !== "string" ||
+    !Array.isArray(deferredBy) ||
+    deferredBy.some((item) => typeof item !== "string")
+  ) {
+    throw new DomainInvariantError(
+      `Planning event ${scheduled.event.id} payload is malformed`,
+    );
+  }
+  simTime(payload.anchorDueAt);
+  return {
+    personId: payload.personId,
+    occurrence: payload.occurrence,
+    anchorDueAt: payload.anchorDueAt,
+    deferredBy: deferredBy as string[],
+  };
+}
+
+function planningReviewEvent(
+  personId: PersonId,
+  occurrence: number,
+  dueAt: SimTime,
+  anchorDueAt: SimTime = dueAt,
+  deferredBy: readonly string[] = [],
+  suffix = "",
+): ScheduledEvent {
+  return {
+    id: asScheduledEventId(
+      `runtime:planning:${personId}:review-${occurrence}${suffix}`,
+    ),
+    dueAt,
+    type: PLANNING_REVIEW_EVENT_TYPE,
+    payload: {
+      personId: String(personId),
+      occurrence,
+      anchorDueAt: anchorDueAt.toString(),
+      deferredBy: [...deferredBy],
+    } satisfies PlanningReviewPayload,
+    correlationId: asCorrelationId(
+      `runtime:planning:${personId}:${occurrence}`,
+    ),
+  };
+}
+
+function scheduledPersonId(event: PersistedScheduledEvent): string | undefined {
+  const payload = event.event.payload;
+  if (typeof payload !== "object" || payload === null || Array.isArray(payload)) {
+    return undefined;
+  }
+  const personId = (payload as Record<string, unknown>).personId;
+  return typeof personId === "string" && personId.length > 0
+    ? personId
+    : undefined;
+}
+
+export class DurablePlanningRuntime {
+  readonly #pool: Pool;
+  readonly #people: PostgresPersonRepository;
+  readonly #schedules: PostgresScheduledEventRepository;
+  readonly #routines: PostgresRoutineRepository;
+  readonly #planning: PostgresPlanningRepository;
+  readonly #memories: PostgresMemoryRepository;
+  readonly #policy: PlanningRuntimePolicy;
+
+  constructor(
+    pool: Pool,
+    policy: Partial<PlanningRuntimePolicy> = {},
+  ) {
+    this.#pool = pool;
+    this.#people = new PostgresPersonRepository(pool);
+    this.#schedules = new PostgresScheduledEventRepository(pool);
+    this.#routines = new PostgresRoutineRepository(pool);
+    this.#planning = new PostgresPlanningRepository(pool);
+    this.#memories = new PostgresMemoryRepository(pool);
+    this.#policy = validatePlanningRuntimePolicy(policy);
+  }
+
+  get policy(): PlanningRuntimePolicy {
+    return { ...this.#policy };
+  }
+
+  async createGoal(
+    worldId: WorldId,
+    goal: LifeGoal,
+  ): Promise<void> {
+    const person = await this.#people.get(
+      worldId,
+      asPersonId(String(goal.ownerId)),
+    );
+    if (person === undefined) {
+      throw new DomainInvariantError(
+        `Planning goal owner is not a persisted person: ${goal.ownerId}`,
+      );
+    }
+    await this.#planning.createGoal(worldId, goal);
+  }
+
+  async scheduleInitial(
+    worldId: WorldId,
+    personId: PersonId,
+    dueAt: SimTime,
+  ): Promise<ScheduledEvent> {
+    if ((await this.#people.get(worldId, personId)) === undefined) {
+      throw new DomainInvariantError(
+        `Cannot schedule planning review for missing person ${personId}`,
+      );
+    }
+    const event = planningReviewEvent(personId, 1, dueAt);
+    await this.#schedules.schedule(worldId, event);
+    return event;
+  }
+
+  async handleReview(
+    context: ScheduledEventHandlerContext,
+  ): Promise<void> {
+    const payload = parsePlanningReview(context.scheduled);
+    const personId = asPersonId(payload.personId);
+    const ownerId = asEntityId(payload.personId);
+    const at = context.scheduled.event.dueAt;
+    const anchorDueAt = simTime(payload.anchorDueAt);
+    const person = await this.#people.get(context.worldId, personId);
+    if (person === undefined) {
+      throw new DomainInvariantError(
+        `Planning review targets missing person ${personId}`,
+      );
+    }
+
+    if (person.person.energy.mode === "sleeping") {
+      const wait = timeUntilEnergyAtLeast(
+        person.person.energy,
+        this.#policy.wakeThreshold,
+        at,
+      );
+      if (wait === undefined) {
+        throw new DomainInvariantError(
+          `Sleeping planning actor ${personId} has no wake threshold`,
+        );
+      }
+      const retryAt = addSimTime(
+        at,
+        wait === 0n ? SIM_SECOND : wait,
+      );
+      const deferredBy = [...new Set([
+        ...payload.deferredBy,
+        "physiology.sleep",
+      ])];
+      const retry = planningReviewEvent(
+        personId,
+        payload.occurrence,
+        retryAt,
+        anchorDueAt,
+        deferredBy,
+        `:deferred-${retryAt}`,
+      );
+      await commitScheduledEventOutcome(this.#pool, {
+        worldId: context.worldId,
+        eventId: context.scheduled.event.id,
+        workerId: context.workerId,
+        processedAt: at,
+        domainEvents: [
+          {
+            id: asEventId(
+              `runtime:planning-deferred:${context.scheduled.event.id}`,
+            ),
+            worldId: context.worldId,
+            simTime: at,
+            type: "planning.review_deferred",
+            actorId: ownerId,
+            payload: {
+              occurrence: payload.occurrence,
+              retryAt: retryAt.toString(),
+              reason: "physiology.sleep",
+            },
+            correlationId: context.scheduled.event.correlationId,
+          },
+        ],
+        scheduledEvents: [retry],
+      });
+      return;
+    }
+
+    const existing = await this.#planning.getPlanByTriggerEvent(
+      context.worldId,
+      context.scheduled.event.id,
+    );
+    let plan: PlanRevision;
+
+    if (existing !== undefined) {
+      plan = existing.plan;
+    } else {
+      const goals = (
+        await this.#planning.listGoals(
+          context.worldId,
+          ownerId,
+          "active",
+        )
+      ).map((persisted) => persisted.goal);
+      const previous = await this.#planning.getActivePlan(
+        context.worldId,
+        ownerId,
+      );
+      const horizonEnd = addSimTime(at, this.#policy.horizon);
+      const busyWindows = await this.#busyWindows(
+        context.worldId,
+        person.person,
+        at,
+        horizonEnd,
+      );
+
+      plan = derivePlanRevision({
+        id: asPlanRevisionId(
+          `runtime:planning:plan:${personId}:review-${payload.occurrence}`,
+        ),
+        ownerId,
+        revision: payload.occurrence,
+        createdAt: at,
+        horizonEnd,
+        goals,
+        busyWindows,
+        ...(previous === undefined
+          ? {}
+          : { previousPlan: previous.plan }),
+        forcedConflict: payload.deferredBy.length > 0,
+      });
+      await this.#planning.putPlanRevision({
+        worldId: context.worldId,
+        plan,
+        triggerEventId: context.scheduled.event.id,
+      });
+    }
+
+    await this.#writeReflection(
+      context.worldId,
+      ownerId,
+      payload.occurrence,
+      at,
+      plan,
+      context.scheduled.event.id,
+    );
+
+    let nextOccurrence = payload.occurrence + 1;
+    let nextAnchor = addSimTime(anchorDueAt, this.#policy.period);
+    while (nextAnchor <= at) {
+      nextAnchor = addSimTime(nextAnchor, this.#policy.period);
+      nextOccurrence += 1;
+    }
+    const next = planningReviewEvent(
+      personId,
+      nextOccurrence,
+      nextAnchor,
+      nextAnchor,
+    );
+    const displacedIntentions = plan.intentions.filter(
+      (intention) => intention.displacedBy.length > 0,
+    ).length;
+
+    await commitScheduledEventOutcome(this.#pool, {
+      worldId: context.worldId,
+      eventId: context.scheduled.event.id,
+      workerId: context.workerId,
+      processedAt: at,
+      domainEvents: [
+        {
+          id: asEventId(
+            `runtime:planning-reviewed:${personId}:${payload.occurrence}`,
+          ),
+          worldId: context.worldId,
+          simTime: at,
+          type: "planning.review_completed",
+          actorId: ownerId,
+          payload: {
+            occurrence: payload.occurrence,
+            planRevisionId: String(plan.id),
+            reason: plan.reason,
+            intentionCount: plan.intentions.length,
+            displacedIntentions,
+            deferredBy: [...payload.deferredBy],
+          },
+          correlationId: context.scheduled.event.correlationId,
+        },
+      ],
+      scheduledEvents: [next],
+    });
+  }
+
+  async #busyWindows(
+    worldId: WorldId,
+    person: PersonState,
+    from: SimTime,
+    through: SimTime,
+  ): Promise<readonly PlanningBusyWindow[]> {
+    const ownerId = asEntityId(String(person.id));
+    const windows: PlanningBusyWindow[] = [];
+
+    const commitments = await this.#routines.listPlannedForOwner({
+      worldId,
+      ownerId,
+      from,
+      through,
+    });
+    for (const persisted of commitments) {
+      const commitment = persisted.commitment;
+      if (commitment.kind !== "employment.shift") continue;
+      windows.push({
+        id: `commitment:${commitment.id}`,
+        kind: commitment.kind,
+        start: commitment.dueAt,
+        end: addSimTime(
+          commitment.dueAt,
+          this.#policy.employmentBusyDuration,
+        ),
+      });
+    }
+
+    const outstanding = await this.#schedules.loadOutstanding(worldId);
+    for (const scheduled of outstanding) {
+      const event = scheduled.event;
+      if (
+        event.dueAt < from ||
+        event.dueAt > through ||
+        scheduledPersonId(scheduled) !== String(person.id)
+      ) {
+        continue;
+      }
+
+      if (event.type === SOCIAL_CONVERSATION_OPPORTUNITY_EVENT_TYPE) {
+        windows.push({
+          id: `social:${event.id}`,
+          kind: event.type,
+          start: event.dueAt,
+          end: addSimTime(event.dueAt, this.#policy.socialBusyDuration),
+        });
+        continue;
+      }
+
+      if (event.type === PERSON_ENERGY_LOW_EVENT_TYPE) {
+        const sleeping = beginSleep(person, event.dueAt);
+        const wait = timeUntilEnergyAtLeast(
+          sleeping.energy,
+          this.#policy.wakeThreshold,
+          event.dueAt,
+        );
+        if (wait !== undefined && wait > 0n) {
+          windows.push({
+            id: `physiology:${event.id}`,
+            kind: "physiology.sleep",
+            start: event.dueAt,
+            end: addSimTime(event.dueAt, wait),
+          });
+        }
+      }
+    }
+
+    return windows;
+  }
+
+  async #writeReflection(
+    worldId: WorldId,
+    ownerId: EntityId,
+    occurrence: number,
+    at: SimTime,
+    plan: PlanRevision,
+    triggerEventId: ReturnType<typeof asScheduledEventId>,
+  ): Promise<void> {
+    const lowerBoundValue =
+      BigInt(at) > BigInt(this.#policy.reflectionLookback)
+        ? BigInt(at) - BigInt(this.#policy.reflectionLookback)
+        : 0n;
+    const lowerBound = simTime(lowerBoundValue);
+    const memories = await this.#memories.listMemories(worldId, ownerId);
+    const recent = memories.filter(
+      (memory) =>
+        memory.category !== "reflection" &&
+        memory.occurredAt >= lowerBound &&
+        memory.occurredAt <= at,
+    );
+    const categories = [...new Set(recent.map((memory) => memory.category))]
+      .sort();
+    const sourceMemoryIds = recent
+      .slice(Math.max(0, recent.length - 8))
+      .map((memory) => String(memory.id));
+    const displacedIntentions = plan.intentions.filter(
+      (intention) => intention.displacedBy.length > 0,
+    ).length;
+
+    await this.#memories.createMemory({
+      id: asMemoryId(
+        `planning:reflection:${ownerId}:review-${occurrence}`,
+      ),
+      worldId,
+      ownerId,
+      category: "reflection",
+      occurredAt: at,
+      content:
+        `Reviewed ${recent.length} durable memories` +
+        ` across ${categories.length === 0 ? "no categories" : categories.join(", ")};` +
+        ` plan revision ${plan.revision} carries ${plan.intentions.length}` +
+        ` intention(s), ${displacedIntentions} displaced by conflicts.`,
+      importanceBps: 6_000,
+      emotionalStrengthBps: 0,
+      relatedEntityIds: [],
+      metadata: {
+        kind: "planning.reflection",
+        occurrence,
+        triggerEventId: String(triggerEventId),
+        planRevisionId: String(plan.id),
+        planReason: plan.reason,
+        sourceMemoryIds,
+        displacedIntentions,
+      },
+    });
+  }
+}
+
 export interface CoreWorldRuntimeOptions {
   readonly physiology?: PhysiologyRuntimePolicy;
   readonly social?: Partial<SocialRuntimePolicy>;
+  readonly planning?: Partial<PlanningRuntimePolicy>;
 }
 
 export class CoreWorldRuntime {
   readonly worker: DurableScheduledEventWorker;
   readonly physiology: DurablePhysiologyRuntime;
   readonly social: DurableSocialRuntime;
+  readonly planning: DurablePlanningRuntime;
   readonly commitments: DurableCommitmentDispatcher;
   readonly #people: PostgresPersonRepository;
   readonly #routines: PostgresRoutineRepository;
@@ -1269,6 +1761,11 @@ export class CoreWorldRuntime {
       ...options.social,
       wakeThreshold:
         options.social?.wakeThreshold ?? this.physiology.policy.wakeThreshold,
+    });
+    this.planning = new DurablePlanningRuntime(pool, {
+      ...options.planning,
+      wakeThreshold:
+        options.planning?.wakeThreshold ?? this.physiology.policy.wakeThreshold,
     });
     this.commitments = new DurableCommitmentDispatcher();
     this.#people = new PostgresPersonRepository(pool);
@@ -1290,6 +1787,9 @@ export class CoreWorldRuntime {
     );
     registry.register(SOCIAL_CONVERSATION_OPPORTUNITY_EVENT_TYPE, (context) =>
       this.social.handleOpportunity(context),
+    );
+    registry.register(PLANNING_REVIEW_EVENT_TYPE, (context) =>
+      this.planning.handleReview(context),
     );
 
     this.commitments.register("employment.shift", async (context, due) => {
@@ -1353,6 +1853,21 @@ export class CoreWorldRuntime {
     claim: SocialSeedClaim,
   ): Promise<void> {
     return this.social.seedClaim(worldId, ownerId, at, claim);
+  }
+
+  async createLifeGoal(
+    worldId: WorldId,
+    goal: LifeGoal,
+  ): Promise<void> {
+    return this.planning.createGoal(worldId, goal);
+  }
+
+  async scheduleInitialPlanning(
+    worldId: WorldId,
+    personId: PersonId,
+    dueAt: SimTime,
+  ): Promise<ScheduledEvent> {
+    return this.planning.scheduleInitial(worldId, personId, dueAt);
   }
 
   async processThrough(input: ProcessScheduledEventsInput): Promise<number> {
