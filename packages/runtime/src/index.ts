@@ -63,9 +63,11 @@ import {
   asPlanRevisionId,
   asScheduledEventId,
   asTenancyId,
+  simDuration,
   simTime,
   type ActionId,
   type Affordance,
+  type ConversationId,
   type EntityId,
   type PersonId,
   type SimDuration,
@@ -1743,10 +1745,900 @@ export class DurablePlanningRuntime {
   }
 }
 
+
+export const DIALOGUE_TURN_EVENT_TYPE = "dialogue.turn";
+
+export interface DialogueRuntimePolicy {
+  readonly turnInterval: SimDuration;
+  readonly wakeThreshold: number;
+  readonly maxVisibleMemories: number;
+  readonly maxHistoryTurns: number;
+  readonly maxBeliefAffordances: number;
+  readonly maxUtteranceChars: number;
+}
+
+export const DEFAULT_DIALOGUE_RUNTIME_POLICY: DialogueRuntimePolicy = {
+  turnInterval: simDuration(10 * 60),
+  wakeThreshold: DEFAULT_PHYSIOLOGY_RUNTIME_POLICY.wakeThreshold,
+  maxVisibleMemories: 8,
+  maxHistoryTurns: 8,
+  maxBeliefAffordances: 6,
+  maxUtteranceChars: 280,
+};
+
+export interface DialogueVisibleBelief {
+  readonly subjectId: string;
+  readonly predicate: string;
+  readonly value: unknown;
+  readonly confidenceBps: number;
+}
+
+export interface DialogueVisibleMemory {
+  readonly category: string;
+  readonly occurredAt: string;
+  readonly content: string;
+  readonly relatedEntityIds: readonly string[];
+}
+
+export interface DialogueVisibleStatement {
+  readonly subjectId: string;
+  readonly predicate: string;
+  readonly value: unknown;
+  readonly confidenceBps: number;
+}
+
+export interface DialogueVisibleTurn {
+  readonly ordinal: number;
+  readonly speakerId: string;
+  readonly sentAt: string;
+  readonly text: string;
+  readonly statements: readonly DialogueVisibleStatement[];
+}
+
+export interface DialogueVisiblePlan {
+  readonly revision: number;
+  readonly reason: string;
+  readonly intentions: readonly {
+    readonly kind: string;
+    readonly startsAt: string;
+    readonly endsAt: string;
+  }[];
+}
+
+export interface DialogueCognitionContext {
+  readonly conversationId: string;
+  readonly turnOrdinal: number;
+  readonly speakerId: string;
+  readonly listenerId: string;
+  readonly relationship: Readonly<Record<string, number>> | null;
+  readonly beliefs: readonly DialogueVisibleBelief[];
+  readonly memories: readonly DialogueVisibleMemory[];
+  readonly history: readonly DialogueVisibleTurn[];
+  readonly activePlan: DialogueVisiblePlan | null;
+}
+
+interface DialogueTurnPayload {
+  readonly conversationId: string;
+  readonly turnOrdinal: number;
+  readonly firstSpeakerId: string;
+  readonly turnInterval: string;
+}
+
+interface DialogueShareCandidate {
+  readonly affordance: Affordance;
+  readonly belief: DialogueVisibleBelief;
+  readonly sourceStatement?: ConversationStatement;
+  readonly heardFrom?: EntityId;
+  readonly origin?: StatementOrigin;
+}
+
+interface DialogueTurnChoices {
+  readonly context: DialogueCognitionContext;
+  readonly affordances: readonly Affordance[];
+  readonly shareByAffordanceId: ReadonlyMap<string, DialogueShareCandidate>;
+}
+
+function validateDialogueRuntimePolicy(
+  input: Partial<DialogueRuntimePolicy>,
+): DialogueRuntimePolicy {
+  const policy: DialogueRuntimePolicy = {
+    ...DEFAULT_DIALOGUE_RUNTIME_POLICY,
+    ...input,
+  };
+  if (policy.turnInterval <= 0n) {
+    throw new DomainInvariantError("Dialogue turn interval must be positive");
+  }
+  assertBasisPointThreshold(policy.wakeThreshold, "dialogue wakeThreshold");
+  for (const [label, value] of [
+    ["maxVisibleMemories", policy.maxVisibleMemories],
+    ["maxHistoryTurns", policy.maxHistoryTurns],
+    ["maxBeliefAffordances", policy.maxBeliefAffordances],
+    ["maxUtteranceChars", policy.maxUtteranceChars],
+  ] as const) {
+    if (!Number.isSafeInteger(value) || value <= 0) {
+      throw new DomainInvariantError(
+        `Dialogue ${label} must be a positive safe integer`,
+      );
+    }
+  }
+  return policy;
+}
+
+function parseDialogueTurn(
+  scheduled: PersistedScheduledEvent,
+): DialogueTurnPayload {
+  const value = scheduled.event.payload;
+  if (typeof value !== "object" || value === null || Array.isArray(value)) {
+    throw new DomainInvariantError(
+      `Dialogue event ${scheduled.event.id} payload must be an object`,
+    );
+  }
+  const payload = value as Record<string, unknown>;
+  if (
+    typeof payload.conversationId !== "string" ||
+    payload.conversationId.length === 0 ||
+    typeof payload.turnOrdinal !== "number" ||
+    !Number.isSafeInteger(payload.turnOrdinal) ||
+    payload.turnOrdinal <= 0 ||
+    typeof payload.firstSpeakerId !== "string" ||
+    payload.firstSpeakerId.length === 0 ||
+    typeof payload.turnInterval !== "string"
+  ) {
+    throw new DomainInvariantError(
+      `Dialogue event ${scheduled.event.id} payload is malformed`,
+    );
+  }
+  simDuration(payload.turnInterval);
+  return {
+    conversationId: payload.conversationId,
+    turnOrdinal: payload.turnOrdinal,
+    firstSpeakerId: payload.firstSpeakerId,
+    turnInterval: payload.turnInterval,
+  };
+}
+
+function dialogueTurnEvent(input: {
+  readonly conversationId: ConversationId;
+  readonly turnOrdinal: number;
+  readonly firstSpeakerId: EntityId;
+  readonly dueAt: SimTime;
+  readonly turnInterval: SimDuration;
+  readonly suffix?: string;
+}): ScheduledEvent {
+  return {
+    id: asScheduledEventId(
+      `runtime:dialogue:${input.conversationId}:turn-${input.turnOrdinal}${input.suffix ?? ""}`,
+    ),
+    dueAt: input.dueAt,
+    type: DIALOGUE_TURN_EVENT_TYPE,
+    payload: {
+      conversationId: String(input.conversationId),
+      turnOrdinal: input.turnOrdinal,
+      firstSpeakerId: String(input.firstSpeakerId),
+      turnInterval: input.turnInterval.toString(),
+    } satisfies DialogueTurnPayload,
+    correlationId: asCorrelationId(
+      `runtime:dialogue:${input.conversationId}:turn-${input.turnOrdinal}`,
+    ),
+  };
+}
+
+function dialogueMessageId(
+  conversationId: ConversationId,
+  turnOrdinal: number,
+): ReturnType<typeof asConversationMessageId> {
+  return asConversationMessageId(
+    `runtime:dialogue:message:${conversationId}:turn-${turnOrdinal}`,
+  );
+}
+
+function dialogueRequestId(
+  conversationId: ConversationId,
+  turnOrdinal: number,
+): ReturnType<typeof asCognitionRequestId> {
+  return asCognitionRequestId(
+    `runtime:dialogue:decision:${conversationId}:turn-${turnOrdinal}`,
+  );
+}
+
+function dialogueStatementId(
+  conversationId: ConversationId,
+  turnOrdinal: number,
+): ReturnType<typeof asConversationStatementId> {
+  return asConversationStatementId(
+    `runtime:dialogue:statement:${conversationId}:turn-${turnOrdinal}`,
+  );
+}
+
+function dialogueSpeakerPair(
+  participantIds: readonly EntityId[],
+  firstSpeakerId: EntityId,
+  turnOrdinal: number,
+): { readonly speakerId: EntityId; readonly listenerId: EntityId } {
+  if (participantIds.length !== 2) {
+    throw new DomainInvariantError(
+      "Durable dialogue currently requires exactly two participants",
+    );
+  }
+  if (!participantIds.includes(firstSpeakerId)) {
+    throw new DomainInvariantError(
+      `Dialogue first speaker is not a participant: ${firstSpeakerId}`,
+    );
+  }
+  const other = participantIds.find((id) => id !== firstSpeakerId);
+  if (other === undefined) {
+    throw new DomainInvariantError(
+      "Dialogue participants must contain two distinct entities",
+    );
+  }
+  return turnOrdinal % 2 === 1
+    ? { speakerId: firstSpeakerId, listenerId: other }
+    : { speakerId: other, listenerId: firstSpeakerId };
+}
+
+function visibleRelationship(
+  vector: {
+    readonly familiarity: number;
+    readonly trust: number;
+    readonly affection: number;
+    readonly respect: number;
+    readonly attraction: number;
+    readonly fear: number;
+    readonly resentment: number;
+    readonly dependency: number;
+  } | undefined,
+): Readonly<Record<string, number>> | null {
+  if (vector === undefined) return null;
+  return {
+    familiarity: vector.familiarity,
+    trust: vector.trust,
+    affection: vector.affection,
+    respect: vector.respect,
+    attraction: vector.attraction,
+    fear: vector.fear,
+    resentment: vector.resentment,
+    dependency: vector.dependency,
+  };
+}
+
+function visiblePlan(
+  plan: PlanRevision | undefined,
+): DialogueVisiblePlan | null {
+  if (plan === undefined) return null;
+  return {
+    revision: plan.revision,
+    reason: plan.reason,
+    intentions: plan.intentions.map((intention) => ({
+      kind: intention.kind,
+      startsAt: intention.startsAt.toString(),
+      endsAt: intention.endsAt.toString(),
+    })),
+  };
+}
+
+function validateUtterance(text: string, maxChars: number): string {
+  const trimmed = text.trim();
+  if (trimmed.length === 0) {
+    throw new DomainInvariantError("Dialogue utterance cannot be blank");
+  }
+  if (trimmed.length > maxChars) {
+    throw new DomainInvariantError(
+      `Dialogue utterance exceeds ${maxChars} characters`,
+    );
+  }
+  return trimmed;
+}
+
+export class DurableDialogueRuntime {
+  readonly #pool: Pool;
+  readonly #people: PostgresPersonRepository;
+  readonly #schedules: PostgresScheduledEventRepository;
+  readonly #conversations: PostgresConversationRepository;
+  readonly #deliveries: PostgresConversationDeliveryProcessor;
+  readonly #social: PostgresSocialRepository;
+  readonly #memories: PostgresMemoryRepository;
+  readonly #planning: PostgresPlanningRepository;
+  readonly #executor: DurableCognitionExecutor<DialogueCognitionContext>;
+  readonly #policy: DialogueRuntimePolicy;
+
+  constructor(
+    pool: Pool,
+    options: {
+      readonly policy?: Partial<DialogueRuntimePolicy>;
+      readonly provider?: TraceableCognitiveProvider<DialogueCognitionContext>;
+    } = {},
+  ) {
+    this.#pool = pool;
+    this.#people = new PostgresPersonRepository(pool);
+    this.#schedules = new PostgresScheduledEventRepository(pool);
+    this.#conversations = new PostgresConversationRepository(pool);
+    this.#deliveries = new PostgresConversationDeliveryProcessor(pool);
+    this.#social = new PostgresSocialRepository(pool);
+    this.#memories = new PostgresMemoryRepository(pool);
+    this.#planning = new PostgresPlanningRepository(pool);
+    this.#policy = validateDialogueRuntimePolicy(options.policy ?? {});
+    const provider =
+      options.provider ??
+      new DeterministicTraceableCognitiveProvider<DialogueCognitionContext>({
+        id: "dialogue-mock-traceable",
+        modelId: "dialogue-mock-v1",
+      });
+    this.#executor = new DurableCognitionExecutor(
+      new PostgresCognitionRepository(pool),
+      provider,
+    );
+  }
+
+  get policy(): DialogueRuntimePolicy {
+    return { ...this.#policy };
+  }
+
+  async startConversation(input: {
+    readonly worldId: WorldId;
+    readonly conversationId: ConversationId;
+    readonly participantIds: readonly [PersonId, PersonId];
+    readonly firstSpeakerId: PersonId;
+    readonly startedAt: SimTime;
+    readonly maxTurns: number;
+    readonly turnInterval?: SimDuration;
+  }): Promise<ScheduledEvent> {
+    if (
+      input.participantIds[0] === input.participantIds[1] ||
+      !input.participantIds.includes(input.firstSpeakerId)
+    ) {
+      throw new DomainInvariantError(
+        "Dialogue requires two distinct participants and a participating first speaker",
+      );
+    }
+    if (!Number.isSafeInteger(input.maxTurns) || input.maxTurns <= 0) {
+      throw new DomainInvariantError(
+        "Dialogue maxTurns must be a positive safe integer",
+      );
+    }
+    for (const personId of input.participantIds) {
+      if ((await this.#people.get(input.worldId, personId)) === undefined) {
+        throw new DomainInvariantError(
+          `Dialogue participant is not a persisted person: ${personId}`,
+        );
+      }
+    }
+
+    await this.#conversations.createConversation({
+      id: input.conversationId,
+      worldId: input.worldId,
+      participantIds: input.participantIds.map((id) => asEntityId(String(id))),
+      startedAt: input.startedAt,
+      maxTurns: input.maxTurns,
+    });
+
+    const event = dialogueTurnEvent({
+      conversationId: input.conversationId,
+      turnOrdinal: 1,
+      firstSpeakerId: asEntityId(String(input.firstSpeakerId)),
+      dueAt: input.startedAt,
+      turnInterval: input.turnInterval ?? this.#policy.turnInterval,
+    });
+    await this.#schedules.schedule(input.worldId, event);
+    return event;
+  }
+
+  async handleTurn(
+    context: ScheduledEventHandlerContext,
+  ): Promise<void> {
+    const payload = parseDialogueTurn(context.scheduled);
+    const conversationId = asConversationId(payload.conversationId);
+    const conversation = await this.#conversations.getConversation(
+      context.worldId,
+      conversationId,
+    );
+    if (conversation === undefined) {
+      throw new DomainInvariantError(
+        `Dialogue conversation does not exist: ${conversationId}`,
+      );
+    }
+    if (payload.turnOrdinal > conversation.maxTurns) {
+      throw new DomainInvariantError(
+        `Dialogue turn ${payload.turnOrdinal} exceeds maxTurns ${conversation.maxTurns}`,
+      );
+    }
+
+    const firstSpeakerId = asEntityId(payload.firstSpeakerId);
+    const pair = dialogueSpeakerPair(
+      conversation.participantIds,
+      firstSpeakerId,
+      payload.turnOrdinal,
+    );
+    const messageId = dialogueMessageId(
+      conversationId,
+      payload.turnOrdinal,
+    );
+    const existing = await this.#conversations.getMessage(
+      context.worldId,
+      messageId,
+    );
+
+    if (existing === undefined) {
+      const defer = await this.#availabilityDelay(
+        context.worldId,
+        [pair.speakerId, pair.listenerId],
+        context.scheduled.event.dueAt,
+      );
+      if (defer !== undefined) {
+        const retryAt = addSimTime(
+          context.scheduled.event.dueAt,
+          defer.wait === 0n ? SIM_SECOND : defer.wait,
+        );
+        const retry = dialogueTurnEvent({
+          conversationId,
+          turnOrdinal: payload.turnOrdinal,
+          firstSpeakerId,
+          dueAt: retryAt,
+          turnInterval: simDuration(payload.turnInterval),
+          suffix: `:deferred-${retryAt}`,
+        });
+        await commitScheduledEventOutcome(this.#pool, {
+          worldId: context.worldId,
+          eventId: context.scheduled.event.id,
+          workerId: context.workerId,
+          processedAt: context.scheduled.event.dueAt,
+          domainEvents: [
+            {
+              id: asEventId(
+                `runtime:dialogue-deferred:${context.scheduled.event.id}`,
+              ),
+              worldId: context.worldId,
+              simTime: context.scheduled.event.dueAt,
+              type: "dialogue.turn_deferred",
+              actorId: pair.speakerId,
+              targetIds: [pair.listenerId],
+              payload: {
+                conversationId: String(conversationId),
+                turnOrdinal: payload.turnOrdinal,
+                retryAt: retryAt.toString(),
+                unavailablePersonIds: defer.personIds,
+              },
+              correlationId: context.scheduled.event.correlationId,
+            },
+          ],
+          scheduledEvents: [retry],
+        });
+        return;
+      }
+
+      const choices = await this.#turnChoices(
+        context.worldId,
+        conversationId,
+        payload.turnOrdinal,
+        pair.speakerId,
+        pair.listenerId,
+        context.scheduled.event.dueAt,
+      );
+      const requestId = dialogueRequestId(
+        conversationId,
+        payload.turnOrdinal,
+      );
+      const decision = await this.#executor.decide(context.worldId, {
+        id: requestId,
+        actorId: pair.speakerId,
+        simTime: context.scheduled.event.dueAt,
+        correlationId: context.scheduled.event.correlationId,
+        context: choices.context,
+        affordances: choices.affordances,
+      });
+      const text = validateUtterance(
+        decision.intent,
+        this.#policy.maxUtteranceChars,
+      );
+      const share = choices.shareByAffordanceId.get(
+        String(decision.affordanceId),
+      );
+      const statements =
+        share === undefined
+          ? []
+          : [
+              this.#statementForShare(
+                conversationId,
+                payload.turnOrdinal,
+                share,
+              ),
+            ];
+
+      await this.#conversations.appendMessage({
+        id: messageId,
+        worldId: context.worldId,
+        conversationId,
+        speakerId: pair.speakerId,
+        sentAt: context.scheduled.event.dueAt,
+        text,
+        statements,
+      });
+    }
+
+    await this.#ensureMessageDelivery(
+      context.worldId,
+      messageId,
+      context.workerId,
+    );
+    await this.#completeTurn(
+      context,
+      conversationId,
+      firstSpeakerId,
+      payload,
+      pair,
+    );
+  }
+
+  async #availabilityDelay(
+    worldId: WorldId,
+    participantIds: readonly EntityId[],
+    at: SimTime,
+  ): Promise<
+    | {
+        readonly wait: SimDuration;
+        readonly personIds: readonly string[];
+      }
+    | undefined
+  > {
+    let maxWait = 0n as SimDuration;
+    const unavailable: string[] = [];
+    for (const entityId of participantIds) {
+      const person = await this.#people.get(
+        worldId,
+        asPersonId(String(entityId)),
+      );
+      if (person === undefined) {
+        throw new DomainInvariantError(
+          `Dialogue participant is not a persisted person: ${entityId}`,
+        );
+      }
+      if (person.person.energy.mode !== "sleeping") continue;
+      const wait = timeUntilEnergyAtLeast(
+        person.person.energy,
+        this.#policy.wakeThreshold,
+        at,
+      );
+      if (wait === undefined) {
+        throw new DomainInvariantError(
+          `Sleeping dialogue participant ${entityId} has no wake threshold`,
+        );
+      }
+      unavailable.push(String(entityId));
+      if (wait > maxWait) maxWait = wait;
+    }
+    return unavailable.length === 0
+      ? undefined
+      : { wait: maxWait, personIds: unavailable };
+  }
+
+  async #turnChoices(
+    worldId: WorldId,
+    conversationId: ConversationId,
+    turnOrdinal: number,
+    speakerId: EntityId,
+    listenerId: EntityId,
+    at: SimTime,
+  ): Promise<DialogueTurnChoices> {
+    const beliefs = (await this.#social.listBeliefs(worldId, speakerId))
+      .slice()
+      .sort((left, right) => {
+        if (left.confidenceBps !== right.confidenceBps) {
+          return right.confidenceBps - left.confidenceBps;
+        }
+        const leftKey = socialClaimKey(left.subjectId, left.predicate);
+        const rightKey = socialClaimKey(right.subjectId, right.predicate);
+        return leftKey.localeCompare(rightKey);
+      })
+      .slice(0, this.#policy.maxBeliefAffordances);
+
+    const visibleBeliefs: DialogueVisibleBelief[] = beliefs.map((belief) => ({
+      subjectId: belief.subjectId,
+      predicate: belief.predicate,
+      value: belief.value,
+      confidenceBps: belief.confidenceBps,
+    }));
+
+    const memories = (await this.#memories.listMemories(worldId, speakerId))
+      .filter((memory) => memory.occurredAt <= at);
+    const visibleMemories: DialogueVisibleMemory[] = memories
+      .slice(Math.max(0, memories.length - this.#policy.maxVisibleMemories))
+      .map((memory) => ({
+        category: memory.category,
+        occurredAt: memory.occurredAt.toString(),
+        content: memory.content,
+        relatedEntityIds: memory.relatedEntityIds.map(String),
+      }));
+
+    const history = (
+      await this.#conversations.listMessages(worldId, conversationId)
+    )
+      .filter((message) => message.ordinal < turnOrdinal)
+      .slice(-this.#policy.maxHistoryTurns)
+      .map<DialogueVisibleTurn>((message) => ({
+        ordinal: message.ordinal,
+        speakerId: String(message.speakerId),
+        sentAt: message.sentAt.toString(),
+        text: message.text,
+        statements: message.statements.map((statement) => ({
+          subjectId: statement.subjectId,
+          predicate: statement.predicate,
+          value: statement.value,
+          confidenceBps: statement.confidenceBps,
+        })),
+      }));
+
+    const relationship = await this.#social.getRelationship(
+      worldId,
+      speakerId,
+      listenerId,
+    );
+    const activePlan = await this.#planning.getActivePlan(
+      worldId,
+      speakerId,
+    );
+
+    const shareByAffordanceId = new Map<string, DialogueShareCandidate>();
+    const affordances: Affordance[] = [];
+    for (let index = 0; index < beliefs.length; index += 1) {
+      const belief = beliefs[index]!;
+      const visible = visibleBeliefs[index]!;
+      const source = await this.#sourceForBelief(
+        worldId,
+        speakerId,
+        belief.subjectId,
+        belief.predicate,
+        memories,
+      );
+      const affordance: Affordance = {
+        id: asAffordanceId(
+          `dialogue.share-belief.${String(index + 1).padStart(2, "0")}`,
+        ),
+        actionId: asActionId("dialogue.speak"),
+        label:
+          `Tell ${listenerId} that ${belief.subjectId} ${belief.predicate} ` +
+          `${JSON.stringify(belief.value)}`,
+        context: {
+          subjectId: belief.subjectId,
+          predicate: belief.predicate,
+          value: belief.value,
+          confidenceBps: belief.confidenceBps,
+        },
+      };
+      const candidate: DialogueShareCandidate = {
+        affordance,
+        belief: visible,
+        ...(source.statement === undefined
+          ? {}
+          : { sourceStatement: source.statement }),
+        ...(source.heardFrom === undefined
+          ? {}
+          : { heardFrom: source.heardFrom }),
+        ...(source.origin === undefined
+          ? {}
+          : { origin: source.origin }),
+      };
+      affordances.push(affordance);
+      shareByAffordanceId.set(String(affordance.id), candidate);
+    }
+
+    affordances.push({
+      id: asAffordanceId("dialogue.small-talk"),
+      actionId: asActionId("dialogue.speak"),
+      label: `Make ordinary small talk with ${listenerId}`,
+      context: {},
+    });
+
+    return {
+      context: {
+        conversationId: String(conversationId),
+        turnOrdinal,
+        speakerId: String(speakerId),
+        listenerId: String(listenerId),
+        relationship: visibleRelationship(relationship?.vector),
+        beliefs: visibleBeliefs,
+        memories: visibleMemories,
+        history,
+        activePlan: visiblePlan(activePlan?.plan),
+      },
+      affordances,
+      shareByAffordanceId,
+    };
+  }
+
+  async #sourceForBelief(
+    worldId: WorldId,
+    speakerId: EntityId,
+    subjectId: string,
+    predicate: string,
+    memories: readonly Awaited<
+      ReturnType<PostgresMemoryRepository["listMemories"]>
+    >[number][],
+  ): Promise<{
+    readonly statement?: ConversationStatement;
+    readonly heardFrom?: EntityId;
+    readonly origin?: StatementOrigin;
+  }> {
+    for (let index = memories.length - 1; index >= 0; index -= 1) {
+      const memory = memories[index]!;
+      const metadata = socialMetadata(memory.metadata);
+      if (metadata === undefined) continue;
+
+      if (
+        metadata.kind === "social.seed_claim" &&
+        metadata.subjectId === subjectId &&
+        metadata.predicate === predicate
+      ) {
+        const origin = parseStatementOrigin(metadata.origin);
+        return origin === undefined ? {} : { origin };
+      }
+
+      if (
+        metadata.role !== "listener" ||
+        typeof metadata.messageId !== "string"
+      ) {
+        continue;
+      }
+      const message = await this.#conversations.getMessage(
+        worldId,
+        asConversationMessageId(metadata.messageId),
+      );
+      const statement = message?.statements.find(
+        (candidate) =>
+          candidate.subjectId === subjectId &&
+          candidate.predicate === predicate,
+      );
+      if (statement !== undefined && message !== undefined) {
+        return {
+          statement,
+          heardFrom: message.speakerId,
+          origin: "reported",
+        };
+      }
+    }
+    return {};
+  }
+
+  #statementForShare(
+    conversationId: ConversationId,
+    turnOrdinal: number,
+    share: DialogueShareCandidate,
+  ): ConversationStatement {
+    const id = dialogueStatementId(conversationId, turnOrdinal);
+    if (share.sourceStatement !== undefined) {
+      return retellStatement({
+        id,
+        source: share.sourceStatement,
+        confidenceBps: share.belief.confidenceBps,
+        value: share.belief.value,
+        ...(share.heardFrom === undefined
+          ? {}
+          : { claimedSourceEntityId: share.heardFrom }),
+      });
+    }
+    return {
+      id,
+      subjectId: share.belief.subjectId,
+      predicate: share.belief.predicate,
+      value: share.belief.value,
+      confidenceBps: share.belief.confidenceBps,
+      origin: share.origin ?? "inferred",
+      hopCount: 0,
+    };
+  }
+
+  async #ensureMessageDelivery(
+    worldId: WorldId,
+    messageId: ReturnType<typeof asConversationMessageId>,
+    workerId: string,
+  ): Promise<void> {
+    for (let attempt = 0; attempt < 100; attempt += 1) {
+      const deliveries = await this.#conversations.listDeliveries(
+        worldId,
+        messageId,
+      );
+      if (deliveries.length !== 1) {
+        throw new DomainInvariantError(
+          `Expected one delivery for dialogue message ${messageId}, found ${deliveries.length}`,
+        );
+      }
+      const target = deliveries[0]!;
+      if (target.status === "completed") return;
+      if (target.status === "processing") {
+        if (target.lockedBy !== workerId) {
+          throw new DomainInvariantError(
+            `Dialogue delivery ${messageId} is leased by ${target.lockedBy ?? "another worker"}`,
+          );
+        }
+        await this.#deliveries.processClaim(target, workerId);
+        continue;
+      }
+
+      const claimed = await this.#conversations.claimPendingDeliveries(
+        worldId,
+        workerId,
+        1,
+      );
+      const delivery = claimed[0];
+      if (delivery === undefined) {
+        throw new DomainInvariantError(
+          `Dialogue delivery ${messageId} could not be claimed`,
+        );
+      }
+      await this.#deliveries.processClaim(delivery, workerId);
+    }
+    throw new DomainInvariantError(
+      `Dialogue delivery ${messageId} did not converge after 100 claims`,
+    );
+  }
+
+  async #completeTurn(
+    context: ScheduledEventHandlerContext,
+    conversationId: ConversationId,
+    firstSpeakerId: EntityId,
+    payload: DialogueTurnPayload,
+    pair: { readonly speakerId: EntityId; readonly listenerId: EntityId },
+  ): Promise<void> {
+    const turnInterval = simDuration(payload.turnInterval);
+    const next =
+      payload.turnOrdinal >=
+      (
+        await this.#conversations.getConversation(
+          context.worldId,
+          conversationId,
+        )
+      )!.maxTurns
+        ? []
+        : [
+            dialogueTurnEvent({
+              conversationId,
+              turnOrdinal: payload.turnOrdinal + 1,
+              firstSpeakerId,
+              dueAt: addSimTime(
+                context.scheduled.event.dueAt,
+                turnInterval,
+              ),
+              turnInterval,
+            }),
+          ];
+
+    await commitScheduledEventOutcome(this.#pool, {
+      worldId: context.worldId,
+      eventId: context.scheduled.event.id,
+      workerId: context.workerId,
+      processedAt: context.scheduled.event.dueAt,
+      domainEvents: [
+        {
+          id: asEventId(
+            `runtime:dialogue-completed:${conversationId}:turn-${payload.turnOrdinal}`,
+          ),
+          worldId: context.worldId,
+          simTime: context.scheduled.event.dueAt,
+          type: "dialogue.turn_completed",
+          actorId: pair.speakerId,
+          targetIds: [pair.listenerId],
+          payload: {
+            conversationId: String(conversationId),
+            turnOrdinal: payload.turnOrdinal,
+            messageId: String(
+              dialogueMessageId(conversationId, payload.turnOrdinal),
+            ),
+            cognitionRequestId: String(
+              dialogueRequestId(conversationId, payload.turnOrdinal),
+            ),
+          },
+          correlationId: context.scheduled.event.correlationId,
+        },
+      ],
+      scheduledEvents: next,
+    });
+  }
+}
+
 export interface CoreWorldRuntimeOptions {
   readonly physiology?: PhysiologyRuntimePolicy;
   readonly social?: Partial<SocialRuntimePolicy>;
   readonly planning?: Partial<PlanningRuntimePolicy>;
+  readonly dialogue?: Partial<DialogueRuntimePolicy>;
+  readonly dialogueProvider?: TraceableCognitiveProvider<DialogueCognitionContext>;
 }
 
 export class CoreWorldRuntime {
@@ -1754,6 +2646,7 @@ export class CoreWorldRuntime {
   readonly physiology: DurablePhysiologyRuntime;
   readonly social: DurableSocialRuntime;
   readonly planning: DurablePlanningRuntime;
+  readonly dialogue: DurableDialogueRuntime;
   readonly commitments: DurableCommitmentDispatcher;
   readonly #people: PostgresPersonRepository;
   readonly #routines: PostgresRoutineRepository;
@@ -1776,6 +2669,16 @@ export class CoreWorldRuntime {
       ...options.planning,
       wakeThreshold:
         options.planning?.wakeThreshold ?? this.physiology.policy.wakeThreshold,
+    });
+    this.dialogue = new DurableDialogueRuntime(pool, {
+      policy: {
+        ...options.dialogue,
+        wakeThreshold:
+          options.dialogue?.wakeThreshold ?? this.physiology.policy.wakeThreshold,
+      },
+      ...(options.dialogueProvider === undefined
+        ? {}
+        : { provider: options.dialogueProvider }),
     });
     this.commitments = new DurableCommitmentDispatcher();
     this.#people = new PostgresPersonRepository(pool);
@@ -1800,6 +2703,9 @@ export class CoreWorldRuntime {
     );
     registry.register(PLANNING_REVIEW_EVENT_TYPE, (context) =>
       this.planning.handleReview(context),
+    );
+    registry.register(DIALOGUE_TURN_EVENT_TYPE, (context) =>
+      this.dialogue.handleTurn(context),
     );
 
     this.commitments.register("employment.shift", async (context, due) => {
@@ -1878,6 +2784,18 @@ export class CoreWorldRuntime {
     dueAt: SimTime,
   ): Promise<ScheduledEvent> {
     return this.planning.scheduleInitial(worldId, personId, dueAt);
+  }
+
+  async startDialogue(input: {
+    readonly worldId: WorldId;
+    readonly conversationId: ConversationId;
+    readonly participantIds: readonly [PersonId, PersonId];
+    readonly firstSpeakerId: PersonId;
+    readonly startedAt: SimTime;
+    readonly maxTurns: number;
+    readonly turnInterval?: SimDuration;
+  }): Promise<ScheduledEvent> {
+    return this.dialogue.startConversation(input);
   }
 
   async processThrough(input: ProcessScheduledEventsInput): Promise<number> {
