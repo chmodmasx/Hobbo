@@ -321,9 +321,10 @@ async function setupWorld(
       const pairing = pairings[(day * 2 + slot) % pairings.length]!;
       const first = personId(pairing[0]);
       const second = personId(pairing[1]);
+      const hour = day === 0 && slot === 1 ? 1 : 12 + slot;
       const startedAt = simTime(
         BigInt(SIM_DAY) * BigInt(day) +
-          BigInt(SIM_HOUR) * BigInt(12 + slot),
+          BigInt(SIM_HOUR) * BigInt(hour),
       );
       await runtime.startDialogue({
         worldId,
