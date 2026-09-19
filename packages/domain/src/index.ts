@@ -231,7 +231,3 @@ export function asLifeGoalId(value: string): LifeGoalId {
 export function asPlanRevisionId(value: string): PlanRevisionId {
   return value as PlanRevisionId;
 }
-
-export function asConversationStatementId(value: string): ConversationStatementId {
-  return value as ConversationStatementId;
-}
