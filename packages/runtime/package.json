@@ -13,6 +13,8 @@
   "dependencies": {
     "@hobbo/actions": "workspace:*",
     "@hobbo/agents": "workspace:*",
+    "@hobbo/ai-provider": "workspace:*",
+    "@hobbo/cognition": "workspace:*",
     "@hobbo/conversation": "workspace:*",
     "@hobbo/database": "workspace:*",
     "@hobbo/domain": "workspace:*",
