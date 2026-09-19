@@ -275,6 +275,22 @@
 - [x] The gate proves both fulfilled and missed work occur, salary count equals fulfilled shifts, all twenty rent obligations settle, hunger deferrals occur, body bounds remain valid and physical item totals are conserved.
 - [x] `@hobbo/runtime` is now part of normal workspace typecheck/unit CI and has a dedicated PostgreSQL runtime-integration step after repository integration tests.
 
+## Durable social-life runtime gate completed
+
+- [x] `social.conversation_opportunity` is a first-class durable scheduled event handled by `@hobbo/runtime`; social simulation no longer depends on the old in-memory benchmark loop.
+- [x] Every social opportunity resolves through persistent people, conversations, deliveries, perceptions, beliefs, memories and directional relationships already owned by `@hobbo/database`.
+- [x] Social opportunity scheduling is phase-stable across days and derives listener/claim choices deterministically from durable identities rather than transient RNG state.
+- [x] Sleeping actors do not converse magically: their opportunity emits `social.opportunity_deferred` and is retried after the physiology wake frontier.
+- [x] Conversation messages are one-listener durable units for this first production gate; delivery side effects are processed through `PostgresConversationDeliveryProcessor`, preserving its existing crash-safe/idempotent semantics.
+- [x] Seed knowledge is represented as private durable belief + semantic memory rather than objective world truth.
+- [x] Heard claims may be retold with explicit source-statement lineage and hop counts; deterministic numeric distortion provides a reproducible rumor-mutation path.
+- [x] Listener trust still controls private belief adoption through the existing conversation propagation policy, so agents exposed to the same social world can end with different beliefs.
+- [x] `PostgresPersonRepository.listIds()` provides the runtime a deterministic persisted population roster without introducing runtime-owned SQL.
+- [x] A 20-agent, 30-day PostgreSQL gate drives physiology and social opportunities together, producing hundreds of durable conversations while exercising sleep deferrals, rumor retellings/mutations, private beliefs, memories and relationship familiarity.
+- [x] The gate runs uninterrupted and crash/restarted worlds, deliberately abandons a midpoint scheduler lease, recreates the PostgreSQL pool, requeues it and proves exact semantic equality at day 30.
+- [x] No migration was required; the gate reuses migrations `0006` social/beliefs, `0007` memory, `0008` conversations and `0009` person state.
+- [x] Core simulation CI run #207 is green for the social-runtime milestone.
+
 ### Runtime concurrency boundary
 
 - [x] The production gate proves the safe/default sequential worker path over the durable scheduler.
@@ -285,7 +301,7 @@
 - [x] TypeScript typecheck green across the 14-project workspace, including `@hobbo/runtime`.
 - [x] 108/108 non-integration tests green across 21 files.
 - [x] 70/70 PostgreSQL database integration tests green across 18 files on PostgreSQL 17.
-- [x] 2/2 PostgreSQL runtime integration tests green, including the 20-agent 30-day integrated-life restart gate.
+- [x] 3/3 PostgreSQL runtime integration tests green, including the 20-agent 30-day integrated-life and social-life restart gates.
 - [x] Database migrations `0001` through `0009` plus all SQL smoke checks green.
 - [x] 20-agent, 30-day durable physiology restart gate green.
 - [x] 20-agent, 30-day durable employment/rent restart gate green.
@@ -295,7 +311,7 @@
 - [x] Real Granite cognition smoke passes through `GraniteCognitiveProvider`, not only the raw endpoint request.
 - [x] Real Nomic embedding smoke passes through `NomicEmbeddingProvider`, not only the raw endpoint request.
 
-The deterministic/event-driven kernel is now proven not only in isolated subsystem gates but also through a shared durable production-style runtime: body/inventory, work, missed obligations, salary, housing/rent, commitments, event history and future scheduling remain coherent and restart-equivalent across one 20-agent, 30-day timeline. The remaining major gap before visual/content work is social life at population scale: durable conversations, memories, private beliefs and relationships exist individually, but they are not yet driven together for weeks by the production runtime. Sustained LLM-generated dialogue, long-term planning/reflection and multi-worker same-person concurrency also remain unproven.
+The deterministic/event-driven kernel is now proven not only in isolated subsystem gates but also through a shared durable production-style runtime: body/inventory, work, missed obligations, salary, housing/rent, commitments, conversations, rumor propagation, private beliefs, memories, relationships, event history and future scheduling remain coherent and restart-equivalent across 20-agent, 30-day timelines. The next major simulation gap is long-term goals/plans/reflection over multi-day histories. Sustained LLM-generated dialogue and multi-worker same-person concurrency also remain unproven.
 
 ## Next implementation milestones
 
@@ -305,10 +321,10 @@ The deterministic/event-driven kernel is now proven not only in isolated subsyst
 - [x] Durable person/body/inventory persistence and 20-agent restart gate.
 - [x] Production scheduled-event dispatcher/worker shared by integrated simulation runs.
 - [x] 20-agent durable integrated-life gate combining physiology, employment, housing and commitments on one timeline.
-- [ ] 20-agent long-running social simulation gate driven by `@hobbo/runtime`.
+- [x] 20-agent long-running social simulation gate driven by `@hobbo/runtime`.
 - [ ] Long-term goals/plans and reflection over multi-day histories.
 - [ ] Sustained LLM-generated dialogue using the durable conversation substrate.
 - [ ] Explicit same-person affinity/serialization before multi-worker runtime mode.
 - [ ] Minimal Sprite Forge Blender fixture.
 
-The project should not begin large-scale visual/content work before the long-running social simulation gates are met.
+The long-running deterministic and social simulation gates are now met. Large-scale visual/content production should still wait until goals/planning/reflection and sustained dialogue have their own durable gates.
