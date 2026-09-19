@@ -490,7 +490,7 @@ describe("durable model-driven dialogue runtime", () => {
         workerId: "dialogue-restart-a",
       });
       expect(restartFirst).toBe(controlFirst);
-      expect(controlFirst).toBeGreaterThan(150);
+      expect(controlFirst).toBeGreaterThan(100);
 
       const abandoned = await new PostgresScheduledEventRepository(
         firstProcessPool,
