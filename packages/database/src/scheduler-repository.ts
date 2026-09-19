@@ -199,6 +199,20 @@ export class PostgresScheduledEventRepository {
     return result.rows.map(mapScheduledEvent);
   }
 
+  async loadOutstanding(
+    worldId: WorldId,
+  ): Promise<readonly PersistedScheduledEvent[]> {
+    const result = await this.#pool.query<ScheduledEventRow>(
+      `SELECT ${SCHEDULED_COLUMNS}
+         FROM scheduled_events
+        WHERE world_id = $1
+          AND status IN ('pending','processing')
+        ORDER BY due_at ASC, ordinal ASC`,
+      [worldId],
+    );
+    return result.rows.map(mapScheduledEvent);
+  }
+
   async claimDue(
     worldId: WorldId,
     through: SimTime,
