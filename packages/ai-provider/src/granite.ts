@@ -4,6 +4,8 @@ import {
 } from "@hobbo/domain";
 import type {
   CognitiveDecision,
+  CognitiveDecisionDraft,
+  CognitiveDecisionStrategy,
   CognitiveProvider,
   CognitiveRequest,
 } from "./index.ts";
@@ -98,6 +100,127 @@ function jsonStringify(value: unknown, label: string): string {
     throw new DomainInvariantError(`${label} is not JSON-serializable`);
   }
   return serialized;
+}
+
+
+function assertTraceableMockDecision(
+  request: CognitiveRequest,
+  decision: CognitiveDecisionDraft,
+): void {
+  if (
+    !request.affordances.some(
+      (affordance) => affordance.id === decision.affordanceId,
+    )
+  ) {
+    throw new DomainInvariantError(
+      `Traceable mock selected unavailable affordance: ${decision.affordanceId}`,
+    );
+  }
+  if (decision.intent.trim().length === 0) {
+    throw new DomainInvariantError(
+      "Traceable mock intent cannot be empty",
+    );
+  }
+}
+
+export class DeterministicTraceableCognitiveProvider<TContext = unknown>
+  implements TraceableCognitiveProvider<TContext>
+{
+  readonly id: string;
+  readonly modelId: string;
+  readonly #strategy: CognitiveDecisionStrategy<TContext>;
+
+  constructor(options: {
+    readonly strategy?: CognitiveDecisionStrategy<TContext>;
+    readonly id?: string;
+    readonly modelId?: string;
+  } = {}) {
+    this.id = options.id ?? "mock-traceable";
+    this.modelId = options.modelId ?? "mock-cognitive-model";
+    this.#strategy =
+      options.strategy ??
+      ((request) => {
+        const first = request.affordances[0];
+        if (first === undefined) {
+          throw new DomainInvariantError(
+            "Cognitive request must contain at least one affordance",
+          );
+        }
+        return {
+          affordanceId: first.id,
+          intent: first.label,
+        };
+      });
+  }
+
+  prepareRequest(
+    request: CognitiveRequest<TContext>,
+  ): CognitiveProviderPreparation {
+    if (request.affordances.length === 0) {
+      throw new DomainInvariantError(
+        "Cognitive request must contain at least one affordance",
+      );
+    }
+    const requestPayload = JSON.parse(
+      jsonStringify(
+        {
+          request_id: String(request.id),
+          actor_id: String(request.actorId),
+          sim_time: request.simTime,
+          correlation_id: String(request.correlationId),
+          context: request.context,
+          affordances: request.affordances.map((affordance) => ({
+            id: String(affordance.id),
+            action_id: String(affordance.actionId),
+            label: affordance.label,
+            context: affordance.context,
+          })),
+        },
+        "Traceable mock request",
+      ),
+    ) as unknown;
+    return {
+      providerId: this.id,
+      modelId: this.modelId,
+      requestPayload,
+      samplingConfig: { deterministic: true },
+      schemaConfig: { type: "mock-affordance-decision-v1" },
+    };
+  }
+
+  async decideWithTrace(
+    request: CognitiveRequest<TContext>,
+  ): Promise<CognitiveProviderRun> {
+    const preparation = this.prepareRequest(request);
+    const draft = await this.#strategy(request);
+    assertTraceableMockDecision(request, draft);
+    const decision: CognitiveDecision = {
+      requestId: request.id,
+      affordanceId: draft.affordanceId,
+      intent: draft.intent.trim(),
+      providerId: this.id,
+      replayed: false,
+    };
+    return {
+      decision,
+      trace: {
+        ...preparation,
+        rawResponse: JSON.stringify({
+          affordance_id: String(decision.affordanceId),
+          intent: decision.intent,
+        }),
+        promptTokens: 0,
+        completionTokens: 0,
+        latencyMs: 0,
+      },
+    };
+  }
+
+  async decide(
+    request: CognitiveRequest<TContext>,
+  ): Promise<CognitiveDecision> {
+    return (await this.decideWithTrace(request)).decision;
+  }
 }
 
 function buildSchema(request: CognitiveRequest): unknown {
