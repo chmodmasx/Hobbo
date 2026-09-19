@@ -291,6 +291,31 @@
 - [x] No migration was required; the gate reuses migrations `0006` social/beliefs, `0007` memory, `0008` conversations and `0009` person state.
 - [x] Core simulation CI run #207 is green for the social-runtime milestone.
 
+## Durable goals, planning and reflection gate completed
+
+- [x] Added a pure `@hobbo/planning` domain package. Goal validation, priority ordering, periodic intention generation and conflict displacement are deterministic rules outside the runtime and outside any model provider.
+- [x] Added nominal `LifeGoalId` and `PlanRevisionId` identities in `@hobbo/domain`.
+- [x] Migration `0010_planning.sql` persists life goals and append-style plan revisions, with at most one active revision per owner.
+- [x] `PostgresPlanningRepository` owns durable goal and plan state; `@hobbo/runtime` does not issue planning SQL directly.
+- [x] Plan revisions are idempotent by durable review event and supersede the prior active revision without rewriting its semantic contents.
+- [x] `planning.review` is a first-class scheduled event handled by the production runtime.
+- [x] Reviews build a seven-day intention horizon from active goals and currently materialized durable conflicts.
+- [x] Employment commitments reserve work windows; social opportunities reserve social windows; pending physiology sleep transitions reserve the predicted sleep interval using the same pure energy model as the physiology runtime.
+- [x] Higher-priority goals reserve time first; lower-priority intentions move after conflicting durable windows rather than overlapping them.
+- [x] Reviews attempted while the person is asleep emit `planning.review_deferred`, retry at the wake frontier and mark the resulting plan as conflict-driven.
+- [x] Reflections are append-only `memory.category = "reflection"` records derived from already durable recent memories. They do not rewrite event history, beliefs, conversations or source memories.
+- [x] The first planning slice is deliberately model-independent: an LLM may later propose language or choices, but it is not authoritative for goal/plan persistence or conflict resolution.
+- [x] The runtime gate drives 8 agents for 14 simulated days with physiology, employment, conversations, goals, planning and reflection on the same production dispatcher.
+- [x] The gate deliberately abandons a scheduler lease at the midpoint, closes the PostgreSQL pool, requeues from a fresh pool and proves exact semantic equality with the uninterrupted control run.
+- [x] The gate proves durable work/social/physiology conflicts displace intentions, sleep causes deferred reviews, reflections cite prior durable memories, and each person finishes with exactly one active plan.
+- [x] Core simulation CI run #225 is green for the planning/reflection milestone.
+
+### Planning scope boundary
+
+- [x] Medium-term plans are intentionally provisional. The planner blocks currently materialized commitments and scheduled events; recurring obligations that have not yet been materialized are incorporated by subsequent daily reviews rather than predicted as hidden future facts.
+- [ ] Plan intentions are not yet executable commitments/actions. A later slice must decide which intentions become commitments and how cancellation/completion feeds back into goals.
+- [ ] LLM-generated reasoning/text has not yet been connected to planning or dialogue authority; deterministic state transitions remain authoritative.
+
 ### Runtime concurrency boundary
 
 - [x] The production gate proves the safe/default sequential worker path over the durable scheduler.
@@ -298,11 +323,11 @@
 
 ### Current CI gate
 
-- [x] TypeScript typecheck green across the 14-project workspace, including `@hobbo/runtime`.
-- [x] 108/108 non-integration tests green across 21 files.
-- [x] 70/70 PostgreSQL database integration tests green across 18 files on PostgreSQL 17.
-- [x] 3/3 PostgreSQL runtime integration tests green, including the 20-agent 30-day integrated-life and social-life restart gates.
-- [x] Database migrations `0001` through `0009` plus all SQL smoke checks green.
+- [x] TypeScript typecheck green across the 15-project workspace, including `@hobbo/runtime` and `@hobbo/planning`.
+- [x] 112/112 non-integration tests green, including deterministic planning rules.
+- [x] 71/71 PostgreSQL database integration tests green on PostgreSQL 17, including durable planning persistence.
+- [x] 4/4 PostgreSQL runtime integration tests green, including integrated-life, social-life and multi-day planning restart gates.
+- [x] Database migrations `0001` through `0010` plus all SQL smoke checks green.
 - [x] 20-agent, 30-day durable physiology restart gate green.
 - [x] 20-agent, 30-day durable employment/rent restart gate green.
 - [x] 20-agent, 30-day durable integrated runtime gate green.
@@ -311,7 +336,7 @@
 - [x] Real Granite cognition smoke passes through `GraniteCognitiveProvider`, not only the raw endpoint request.
 - [x] Real Nomic embedding smoke passes through `NomicEmbeddingProvider`, not only the raw endpoint request.
 
-The deterministic/event-driven kernel is now proven not only in isolated subsystem gates but also through a shared durable production-style runtime: body/inventory, work, missed obligations, salary, housing/rent, commitments, conversations, rumor propagation, private beliefs, memories, relationships, event history and future scheduling remain coherent and restart-equivalent across 20-agent, 30-day timelines. The next major simulation gap is long-term goals/plans/reflection over multi-day histories. Sustained LLM-generated dialogue and multi-worker same-person concurrency also remain unproven.
+The deterministic/event-driven kernel is now proven across body/inventory, work, missed obligations, salary, housing/rent, commitments, conversations, rumor propagation, private beliefs, memories, relationships, long-term goals, conflict-aware plans, reflections, event history and future scheduling with restart-equivalent durable gates. The next major simulation gap is sustained LLM-generated dialogue over the existing durable conversation substrate. Multi-worker same-person concurrency also remains unproven.
 
 ## Next implementation milestones
 
@@ -322,9 +347,9 @@ The deterministic/event-driven kernel is now proven not only in isolated subsyst
 - [x] Production scheduled-event dispatcher/worker shared by integrated simulation runs.
 - [x] 20-agent durable integrated-life gate combining physiology, employment, housing and commitments on one timeline.
 - [x] 20-agent long-running social simulation gate driven by `@hobbo/runtime`.
-- [ ] Long-term goals/plans and reflection over multi-day histories.
+- [x] Long-term goals/plans and reflection over multi-day histories.
 - [ ] Sustained LLM-generated dialogue using the durable conversation substrate.
 - [ ] Explicit same-person affinity/serialization before multi-worker runtime mode.
 - [ ] Minimal Sprite Forge Blender fixture.
 
-The long-running deterministic and social simulation gates are now met. Large-scale visual/content production should still wait until goals/planning/reflection and sustained dialogue have their own durable gates.
+The long-running deterministic, social and planning/reflection gates are now met. Large-scale visual/content production should still wait until sustained dialogue has its own durable model/replay gate.
