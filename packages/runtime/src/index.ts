@@ -17,12 +17,18 @@ import {
   type PersonState,
 } from "@hobbo/agents";
 import {
+  DeterministicTraceableCognitiveProvider,
+  type TraceableCognitiveProvider,
+} from "@hobbo/ai-provider/granite";
+import { DurableCognitionExecutor } from "@hobbo/cognition";
+import {
   retellStatement,
   type ConversationStatement,
   type StatementOrigin,
 } from "@hobbo/conversation";
 import {
   commitScheduledEventOutcome,
+  PostgresCognitionRepository,
   PostgresConversationDeliveryProcessor,
   PostgresConversationRepository,
   PostgresEmploymentRepository,
@@ -41,6 +47,9 @@ import {
   SIM_HOUR,
   SIM_SECOND,
   addSimTime,
+  asActionId,
+  asAffordanceId,
+  asCognitionRequestId,
   asCommitmentId,
   asConversationId,
   asConversationMessageId,
@@ -56,6 +65,7 @@ import {
   asTenancyId,
   simTime,
   type ActionId,
+  type Affordance,
   type EntityId,
   type PersonId,
   type SimDuration,
