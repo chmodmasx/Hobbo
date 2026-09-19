@@ -13,6 +13,7 @@
   "dependencies": {
     "@hobbo/actions": "workspace:*",
     "@hobbo/agents": "workspace:*",
+    "@hobbo/conversation": "workspace:*",
     "@hobbo/database": "workspace:*",
     "@hobbo/domain": "workspace:*",
     "@hobbo/simulation": "workspace:*",
