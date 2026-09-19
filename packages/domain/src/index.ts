@@ -20,6 +20,8 @@ export type MemoryId = Brand<string, "MemoryId">;
 export type ConversationId = Brand<string, "ConversationId">;
 export type ConversationMessageId = Brand<string, "ConversationMessageId">;
 export type ConversationStatementId = Brand<string, "ConversationStatementId">;
+export type LifeGoalId = Brand<string, "LifeGoalId">;
+export type PlanRevisionId = Brand<string, "PlanRevisionId">;
 
 export type SimTime = Brand<bigint, "SimTime">;
 export type SimDuration = Brand<bigint, "SimDuration">;
@@ -216,6 +218,18 @@ export function asConversationId(value: string): ConversationId {
 
 export function asConversationMessageId(value: string): ConversationMessageId {
   return value as ConversationMessageId;
+}
+
+export function asConversationStatementId(value: string): ConversationStatementId {
+  return value as ConversationStatementId;
+}
+
+export function asLifeGoalId(value: string): LifeGoalId {
+  return value as LifeGoalId;
+}
+
+export function asPlanRevisionId(value: string): PlanRevisionId {
+  return value as PlanRevisionId;
 }
 
 export function asConversationStatementId(value: string): ConversationStatementId {
