@@ -9,6 +9,7 @@ import {
 } from "@hobbo/domain";
 import type { CognitiveRequest } from "../src/index.ts";
 import {
+  DeterministicTraceableCognitiveProvider,
   GraniteCognitiveProvider,
   type CognitiveFetch,
   type CognitiveHttpResponse,
@@ -78,6 +79,66 @@ function successPayload(
     },
   };
 }
+
+describe("DeterministicTraceableCognitiveProvider", () => {
+  it("uses the same traceable contract as durable Granite decisions without I/O", async () => {
+    const provider = new DeterministicTraceableCognitiveProvider<TestContext>({
+      modelId: "dialogue-mock-v1",
+      strategy: (input) => ({
+        affordanceId: input.affordances[1]!.id,
+        intent: "Keep this short",
+      }),
+    });
+
+    const preparation = provider.prepareRequest(request());
+    const run = await provider.decideWithTrace(request());
+
+    expect(preparation).toMatchObject({
+      providerId: "mock-traceable",
+      modelId: "dialogue-mock-v1",
+      samplingConfig: { deterministic: true },
+      schemaConfig: { type: "mock-affordance-decision-v1" },
+    });
+    expect(preparation.requestPayload).toMatchObject({
+      request_id: "choice-1",
+      actor_id: "person-alice",
+      sim_time: "123",
+      context: {
+        amount: "42",
+      },
+    });
+    expect(run.decision).toEqual({
+      requestId: asCognitionRequestId("choice-1"),
+      affordanceId: ignoreId,
+      intent: "Keep this short",
+      providerId: "mock-traceable",
+      replayed: false,
+    });
+    expect(run.trace).toMatchObject({
+      ...preparation,
+      promptTokens: 0,
+      completionTokens: 0,
+      latencyMs: 0,
+    });
+    expect(JSON.parse(run.trace.rawResponse)).toEqual({
+      affordance_id: "ignore_friend",
+      intent: "Keep this short",
+    });
+  });
+
+  it("rejects a deterministic strategy that invents an unavailable affordance", async () => {
+    const provider = new DeterministicTraceableCognitiveProvider<TestContext>({
+      strategy: () => ({
+        affordanceId: asAffordanceId("invented-dialogue-action"),
+        intent: "Invent",
+      }),
+    });
+
+    await expect(provider.decide(request())).rejects.toThrow(
+      /unavailable affordance/i,
+    );
+  });
+});
 
 describe("GraniteCognitiveProvider", () => {
   it("sends deterministic OpenAI-compatible structured output with the exact affordance enum", async () => {
