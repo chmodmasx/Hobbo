@@ -486,6 +486,17 @@ export class PostgresPersonRepository {
     );
   }
 
+  async listIds(worldId: WorldId): Promise<readonly PersonId[]> {
+    const result = await this.#pool.query<{ id: string }>(
+      `SELECT id
+         FROM persons
+        WHERE world_id = $1
+        ORDER BY id ASC`,
+      [worldId],
+    );
+    return result.rows.map((row) => asPersonId(row.id));
+  }
+
   async listInventory(
     worldId: WorldId,
     ownerId: string,
