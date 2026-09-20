@@ -17,6 +17,7 @@ import {
   type WorldId,
 } from "@hobbo/domain";
 import {
+  canonicalAffinityKeys,
   createCommitment,
   materializeRoutineCommitment,
   nextPeriodicOccurrence,
@@ -42,6 +43,7 @@ interface RoutineRow extends QueryResultRow {
   phase: string;
   kind: string;
   payload: unknown;
+  affinity_keys: string[];
   enabled: boolean;
 }
 
@@ -54,6 +56,7 @@ interface CommitmentRow extends QueryResultRow {
   kind: string;
   payload: unknown;
   correlation_id: string;
+  affinity_keys: string[];
   scheduled_event_id: string | null;
   status: "planned" | "fulfilled" | "missed" | "cancelled";
   resolved_at: string | null;
@@ -81,6 +84,9 @@ function mapRoutine(row: RoutineRow): PersistedRoutine {
       phase: simDuration(row.phase),
       kind: row.kind,
       payload: row.payload,
+      ...(row.affinity_keys.length === 0
+        ? {}
+        : { affinityKeys: canonicalAffinityKeys(row.affinity_keys) }),
     },
     enabled: row.enabled,
   };
@@ -96,6 +102,7 @@ function mapCommitment(row: CommitmentRow): PersistedCommitment {
       kind: row.kind,
       payload: row.payload,
       correlationId: asCorrelationId(row.correlation_id),
+      affinityKeys: canonicalAffinityKeys(row.affinity_keys),
       status: row.status,
       ...(row.routine_id === null ? {} : { routineId: asRoutineId(row.routine_id) }),
       ...(row.resolved_at === null ? {} : { resolvedAt: simTime(row.resolved_at) }),
@@ -106,10 +113,12 @@ function mapCommitment(row: CommitmentRow): PersistedCommitment {
   };
 }
 
-const ROUTINE_COLUMNS = `world_id, id, owner_id, period, phase, kind, payload, enabled`;
+const ROUTINE_COLUMNS = `
+  world_id, id, owner_id, period, phase, kind, payload, affinity_keys, enabled
+`;
 const COMMITMENT_COLUMNS = `
   world_id, id, routine_id, owner_id, due_at, kind, payload,
-  correlation_id, scheduled_event_id, status, resolved_at
+  correlation_id, affinity_keys, scheduled_event_id, status, resolved_at
 `;
 
 async function lockRoutine(
@@ -142,8 +151,8 @@ async function insertCommitmentAndSchedule<TPayload>(
   const result = await client.query<CommitmentRow>(
     `INSERT INTO commitments (
        world_id, id, routine_id, owner_id, due_at, kind, payload,
-       correlation_id, scheduled_event_id, status
-     ) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,'planned')
+       correlation_id, affinity_keys, scheduled_event_id, status
+     ) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,'planned')
      RETURNING ${COMMITMENT_COLUMNS}`,
     [
       worldId,
@@ -154,6 +163,7 @@ async function insertCommitmentAndSchedule<TPayload>(
       commitment.kind,
       toJsonParameter(commitment.payload, `commitment ${commitment.id} payload`),
       commitment.correlationId,
+      canonicalAffinityKeys(commitment.affinityKeys),
       scheduled.id,
     ],
   );
@@ -173,8 +183,8 @@ export async function createRoutineInTransaction<TPayload>(
 
   const result = await client.query<RoutineRow>(
     `INSERT INTO routines (
-       world_id, id, owner_id, period, phase, kind, payload
-     ) VALUES ($1,$2,$3,$4,$5,$6,$7)
+       world_id, id, owner_id, period, phase, kind, payload, affinity_keys
+     ) VALUES ($1,$2,$3,$4,$5,$6,$7,$8)
      RETURNING ${ROUTINE_COLUMNS}`,
     [
       worldId,
@@ -184,6 +194,7 @@ export async function createRoutineInTransaction<TPayload>(
       routine.phase.toString(),
       routine.kind,
       toJsonParameter(routine.payload, `routine ${routine.id} payload`),
+      canonicalAffinityKeys(routine.affinityKeys),
     ],
   );
   const row = result.rows[0];
@@ -420,6 +431,7 @@ export class PostgresRoutineRepository {
     readonly kind: string;
     readonly payload: TPayload;
     readonly correlationId: CorrelationId;
+    readonly affinityKeys?: readonly string[];
   }): Promise<PersistedCommitment<TPayload>> {
     const commitment = createCommitment({
       id: input.id,
@@ -428,6 +440,7 @@ export class PostgresRoutineRepository {
       kind: input.kind,
       payload: input.payload,
       correlationId: input.correlationId,
+      affinityKeys: input.affinityKeys,
     });
     return withTransaction(this.#pool, (client) =>
       insertCommitmentAndSchedule(client, input.worldId, commitment),
