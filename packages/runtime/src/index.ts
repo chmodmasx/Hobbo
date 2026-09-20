@@ -1314,15 +1314,15 @@ export class DurableSocialRuntime {
         continue;
       }
 
-      const claimed = await this.#conversations.claimPendingDeliveries(
+      const delivery = await this.#conversations.claimDelivery(
         worldId,
+        messageId,
+        target.listenerId,
         workerId,
-        1,
       );
-      const delivery = claimed[0];
       if (delivery === undefined) {
         throw new DomainInvariantError(
-          `Social delivery ${messageId} could not be claimed`,
+          `Social delivery ${messageId}:${target.listenerId} could not be claimed in listener order`,
         );
       }
       await this.#deliveries.processClaim(delivery, workerId);
@@ -2641,15 +2641,15 @@ export class DurableDialogueRuntime {
         continue;
       }
 
-      const claimed = await this.#conversations.claimPendingDeliveries(
+      const delivery = await this.#conversations.claimDelivery(
         worldId,
+        messageId,
+        target.listenerId,
         workerId,
-        1,
       );
-      const delivery = claimed[0];
       if (delivery === undefined) {
         throw new DomainInvariantError(
-          `Dialogue delivery ${messageId} could not be claimed`,
+          `Dialogue delivery ${messageId}:${target.listenerId} could not be claimed in listener order`,
         );
       }
       await this.#deliveries.processClaim(delivery, workerId);
