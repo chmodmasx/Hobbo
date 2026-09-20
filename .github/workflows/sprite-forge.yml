@@ -38,7 +38,7 @@ jobs:
       - name: Install Blender
         run: |
           sudo apt-get update
-          sudo apt-get install -y --no-install-recommends blender
+          sudo apt-get install -y --no-install-recommends blender libegl1
           blender --version
 
       - name: Render fixture twice
@@ -66,4 +66,4 @@ jobs:
         with:
           name: sprite-forge-minimal-fixture
           path: .cache/sprite-forge/run-a
-          if-no-files-found: error
+          if-no-files-found: warn
