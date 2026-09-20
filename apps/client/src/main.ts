@@ -171,7 +171,7 @@ async function main(): Promise<void> {
   }
 
   let directionIndex = 0;
-  directionLabel.textContent = CANONICAL_DIRECTIONS[directionIndex];
+  directionLabel.textContent = "N";
 
   rotateButton.addEventListener("click", () => {
     directionIndex =
