@@ -466,6 +466,57 @@ function serialized(value: unknown): string {
   return JSON.stringify(value);
 }
 
+function semanticDialogueSnapshot(snapshot: DialogueSnapshot) {
+  return {
+    counts: snapshot.counts,
+    messages: snapshot.messages,
+    statements: snapshot.statements,
+    cognition: snapshot.cognition,
+    beliefs: snapshot.beliefs,
+    relationships: snapshot.relationships,
+    memories: snapshot.memories,
+    events: snapshot.events
+      .map(({ sequence: _sequence, ...event }) => event)
+      .sort((left, right) => left.id.localeCompare(right.id)),
+    pending: snapshot.pending
+      .map(({ ordinal: _ordinal, ...event }) => event)
+      .sort((left, right) => left.id.localeCompare(right.id)),
+  };
+}
+
+async function processDialogueWithTwoRuntimes(
+  worldId: WorldId,
+  through: ReturnType<typeof simTime>,
+  calls: { value: number },
+): Promise<readonly [number, number]> {
+  const leftPool = new Pool();
+  const rightPool = new Pool();
+  try {
+    const left = new CoreWorldRuntime(leftPool, {
+      dialogueProvider: makeProvider(calls),
+    });
+    const right = new CoreWorldRuntime(rightPool, {
+      dialogueProvider: makeProvider(calls),
+    });
+    return await Promise.all([
+      left.processThrough({
+        worldId,
+        through,
+        workerId: "dialogue-multi-left",
+        claimLimit: 1,
+      }),
+      right.processThrough({
+        worldId,
+        through,
+        workerId: "dialogue-multi-right",
+        claimLimit: 1,
+      }),
+    ]);
+  } finally {
+    await Promise.all([leftPool.end(), rightPool.end()]);
+  }
+}
+
 describe("durable model-driven dialogue runtime", () => {
   it(
     "keeps multi-turn generated dialogue private, replayable and restart-equivalent across a week",
@@ -475,6 +526,13 @@ describe("durable model-driven dialogue runtime", () => {
         pool,
         "runtime-dialogue-control",
         controlCalls,
+      );
+
+      const multiCalls = { value: 0 };
+      const multiSetup = await setupWorld(
+        pool,
+        "runtime-dialogue-multi",
+        multiCalls,
       );
 
       const firstCalls = { value: 0 };
@@ -594,6 +652,22 @@ describe("durable model-driven dialogue runtime", () => {
             ),
           ).size,
         ).toBeGreaterThan(1);
+
+        const multiCounts = await processDialogueWithTwoRuntimes(
+          multiSetup.worldId,
+          END_TIME,
+          multiCalls,
+        );
+        expect(multiCounts[0] + multiCounts[1]).toBe(
+          controlFirst + controlSecond,
+        );
+        expect(multiCounts.every((count) => count > 0)).toBe(true);
+
+        const multi = await snapshot(pool, multiSetup.worldId);
+        expect(semanticDialogueSnapshot(multi)).toEqual(
+          semanticDialogueSnapshot(control),
+        );
+        expect(multiCalls.value).toBe(controlCalls.value);
       } finally {
         await restartedPool.end();
       }
