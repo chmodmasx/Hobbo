@@ -1,0 +1,69 @@
+name: Sprite Forge fixture
+
+on:
+  workflow_dispatch:
+  push:
+    branches: [main]
+    paths:
+      - '.github/workflows/sprite-forge.yml'
+      - 'tools/sprite-forge/**'
+      - 'assets/source/**'
+      - 'assets/definitions/**'
+      - 'docs/ASSET_PIPELINE.md'
+  pull_request:
+    paths:
+      - '.github/workflows/sprite-forge.yml'
+      - 'tools/sprite-forge/**'
+      - 'assets/source/**'
+      - 'assets/definitions/**'
+      - 'docs/ASSET_PIPELINE.md'
+
+permissions:
+  contents: read
+
+concurrency:
+  group: sprite-forge-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  fixture:
+    name: Deterministic Blender fixture
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+
+    steps:
+      - name: Checkout Hobbo
+        uses: actions/checkout@v4
+
+      - name: Install Blender
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y --no-install-recommends blender
+          blender --version
+
+      - name: Render fixture twice
+        run: |
+          mkdir -p .cache/sprite-forge/run-a .cache/sprite-forge/run-b
+          blender --background --factory-startup \
+            --python tools/sprite-forge/blender/render_fixture.py -- \
+            --output-dir .cache/sprite-forge/run-a
+          blender --background --factory-startup \
+            --python tools/sprite-forge/blender/render_fixture.py -- \
+            --output-dir .cache/sprite-forge/run-b
+
+      - name: Validate fixture contract
+        run: |
+          python3 tools/sprite-forge/fixtures/validate_fixture.py \
+            --output-dir .cache/sprite-forge/run-a
+          python3 tools/sprite-forge/fixtures/validate_fixture.py \
+            --output-dir .cache/sprite-forge/run-b
+          python3 tools/sprite-forge/fixtures/validate_fixture.py \
+            --compare .cache/sprite-forge/run-a .cache/sprite-forge/run-b
+
+      - name: Upload fixture output
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: sprite-forge-minimal-fixture
+          path: .cache/sprite-forge/run-a
+          if-no-files-found: error
