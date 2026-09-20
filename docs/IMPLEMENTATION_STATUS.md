@@ -485,13 +485,13 @@ The deterministic/event-driven kernel is proven across body/inventory, work, mis
 - [x] Migration `0013_city_spatial.sql` adds durable room/building/street nodes, traversable connections, active-area grids, blocked tiles, capacity resources/reservations and travel intents.
 - [x] Global route choice is deterministic and weighted by travel time, with stable tie-breaking and explicit disabled/unreachable topology handling.
 - [x] Equal-cost route tie-breaking uses locale-independent code-unit ordering rather than `localeCompare`, preserving replay across ICU/locale environments.
-- [x] Active rooms use deterministic local tile pathfinding; authoritative `spatial.move` now rejects both out-of-bounds and persisted blocked destination tiles before mutation.
+- [x] Active-area local tile pathfinding is deterministic; authoritative `spatial.move` rejects both out-of-bounds and persisted blocked destination tiles before mutation.
 - [x] Long-distance movement is hierarchical: route planning is global, while travel execution uses durable scheduled departure/arrival events instead of per-person realtime ticks.
 - [x] `spatial.travel` is a shared `ActionRegistry` contract; player, system and future NPC callers enter the same validation path.
 - [x] Travel IDs are durable idempotency identities across reconnect/restart; exact retries return the original planned/travelling/arrived intent rather than scheduling a duplicate trip.
 - [x] Immediate player travel resolves departure from the locked authoritative world time inside the planning transaction, avoiding stale pre-lock realtime timestamps.
 - [x] PostgreSQL and shared travel validation enforce at most one active planned/travelling travel per person; a second travel cannot be persisted while another is active.
-- [x] Departure transitions a person into durable transit state and arrival materializes the first deterministic free tile in the destination active-area grid.
+- [x] Departure transitions a person into durable transit state and arrival materializes the first deterministic unblocked tile in the destination active-area grid.
 - [x] Resource reservations serialize concurrent capacity claims under PostgreSQL row locking; duplicate active person/resource reservations are rejected.
 - [x] Runtime restart coverage proves a newly constructed `CoreWorldRuntime` can resume scheduled travel and commit authoritative arrival/history.
 - [x] Realtime sessions resolve the person's room from PostgreSQL, expose read-only topology/spatial endpoints and rebind to the authoritative destination room after travel.
