@@ -1,0 +1,88 @@
+name: Population scale CI
+
+on:
+  workflow_dispatch:
+  push:
+    branches: [main]
+    paths:
+      - '.github/workflows/population-scale.yml'
+      - 'packages/benchmark/package.json'
+      - 'packages/benchmark/tsconfig.json'
+      - 'packages/benchmark/src/durable-population-scale.ts'
+      - 'packages/database/src/**'
+      - 'packages/database/migrations/**'
+      - 'packages/runtime/src/**'
+      - 'packages/simulation/src/**'
+      - 'packages/domain/src/**'
+  pull_request:
+    paths:
+      - '.github/workflows/population-scale.yml'
+      - 'packages/benchmark/package.json'
+      - 'packages/benchmark/tsconfig.json'
+      - 'packages/benchmark/src/durable-population-scale.ts'
+      - 'packages/database/src/**'
+      - 'packages/database/migrations/**'
+      - 'packages/runtime/src/**'
+      - 'packages/simulation/src/**'
+      - 'packages/domain/src/**'
+
+permissions:
+  contents: read
+
+concurrency:
+  group: population-scale-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  durable-population:
+    name: Durable population — ${{ matrix.agents }} agents
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    strategy:
+      fail-fast: false
+      matrix:
+        agents: [100, 500, 1000, 10000]
+
+    services:
+      postgres:
+        image: postgres:17-alpine
+        env:
+          POSTGRES_USER: hobbo
+          POSTGRES_PASSWORD: hobbo
+          POSTGRES_DB: hobbo
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U hobbo -d hobbo"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 10
+
+    env:
+      PGHOST: 127.0.0.1
+      PGPORT: 5432
+      PGUSER: hobbo
+      PGPASSWORD: hobbo
+      PGDATABASE: hobbo
+      HOBBO_SCALE_AGENTS: ${{ matrix.agents }}
+
+    steps:
+      - name: Checkout Hobbo
+        uses: actions/checkout@v4
+
+      - name: Install runtime dependencies
+        run: |
+          npm install --global pnpm@10.15.1
+          sudo apt-get update
+          sudo apt-get install -y --no-install-recommends postgresql-client
+          pnpm install --no-frozen-lockfile
+
+      - name: Apply database migrations
+        run: |
+          for migration in packages/database/migrations/*.sql; do
+            echo "Applying ${migration}"
+            psql -v ON_ERROR_STOP=1 -f "${migration}"
+          done
+
+      - name: Run durable scale probe
+        run: pnpm --filter @hobbo/benchmark scale:durable
