@@ -600,4 +600,186 @@ describe("durable model-driven dialogue runtime", () => {
     },
     240_000,
   );
+
+  it(
+    "replays a persisted cognition decision after a crash before message persistence",
+    async () => {
+      const worldId = asWorldId("runtime-dialogue-cognition-replay");
+      const worlds = new PostgresWorldRepository(pool);
+      const people = new PostgresPersonRepository(pool);
+      const first = personId(0);
+      const second = personId(1);
+      const firstEntity = asEntityId(String(first));
+      const secondEntity = asEntityId(String(second));
+      const conversationId = asConversationId("dialogue-replay-one");
+
+      await worlds.create(worldId);
+      await people.create({
+        worldId,
+        person: makePerson(0),
+        at: simTime(0),
+      });
+      await people.create({
+        worldId,
+        person: makePerson(1),
+        at: simTime(0),
+      });
+
+      const seedRuntime = new CoreWorldRuntime(pool);
+      await seedRuntime.seedSocialClaim(
+        worldId,
+        firstEntity,
+        simTime(0),
+        {
+          subjectId: "cafe-1",
+          predicate: "closing_hour",
+          value: 18,
+          confidenceBps: 10_000,
+          origin: "direct",
+        },
+      );
+      await seedRuntime.startDialogue({
+        worldId,
+        conversationId,
+        participantIds: [first, second],
+        firstSpeakerId: first,
+        startedAt: simTime(0),
+        maxTurns: 1,
+      });
+
+      const shareId = asAffordanceId("dialogue.share-belief.01");
+      const preCalls = { value: 0 };
+      const replayProvider =
+        new DeterministicTraceableCognitiveProvider<DialogueCognitionContext>({
+          id: "dialogue-gate-provider",
+          modelId: "dialogue-gate-v1",
+          strategy: () => {
+            preCalls.value += 1;
+            return {
+              affordanceId: shareId,
+              intent: "I think the cafe closes at 18.",
+            };
+          },
+        });
+      const executor = new DurableCognitionExecutor(
+        new PostgresCognitionRepository(pool),
+        replayProvider,
+      );
+      const requestId = asCognitionRequestId(
+        "runtime:dialogue:decision:" + conversationId + ":turn-1",
+      );
+      const correlationId = asCorrelationId(
+        "runtime:dialogue:" + conversationId + ":turn-1",
+      );
+      const context: DialogueCognitionContext = {
+        conversationId: String(conversationId),
+        turnOrdinal: 1,
+        speakerId: String(firstEntity),
+        listenerId: String(secondEntity),
+        relationship: null,
+        beliefs: [
+          {
+            subjectId: "cafe-1",
+            predicate: "closing_hour",
+            value: 18,
+            confidenceBps: 10_000,
+          },
+        ],
+        memories: [
+          {
+            category: "semantic",
+            occurredAt: "0",
+            content: "Known claim: cafe-1 closing_hour",
+            relatedEntityIds: [],
+          },
+        ],
+        history: [],
+        activePlan: null,
+      };
+      const affordances = [
+        {
+          id: shareId,
+          actionId: asActionId("dialogue.speak"),
+          label:
+            "Tell " + secondEntity + " that cafe-1 closing_hour 18",
+          context: {
+            subjectId: "cafe-1",
+            predicate: "closing_hour",
+            value: 18,
+            confidenceBps: 10_000,
+          },
+        },
+        {
+          id: asAffordanceId("dialogue.small-talk"),
+          actionId: asActionId("dialogue.speak"),
+          label: "Make ordinary small talk with " + secondEntity,
+          context: {},
+        },
+      ] as const;
+
+      const persistedDecision = await executor.decide(worldId, {
+        id: requestId,
+        actorId: firstEntity,
+        simTime: simTime(0),
+        correlationId,
+        context,
+        affordances,
+      });
+      expect(persistedDecision.replayed).toBe(false);
+      expect(preCalls.value).toBe(1);
+
+      const forbiddenCalls = { value: 0 };
+      const forbiddenProvider =
+        new DeterministicTraceableCognitiveProvider<DialogueCognitionContext>({
+          id: "dialogue-gate-provider",
+          modelId: "dialogue-gate-v1",
+          strategy: () => {
+            forbiddenCalls.value += 1;
+            throw new Error("persisted dialogue cognition was regenerated");
+          },
+        });
+      const restartedRuntime = new CoreWorldRuntime(pool, {
+        dialogueProvider: forbiddenProvider,
+      });
+
+      expect(
+        await restartedRuntime.processThrough({
+          worldId,
+          through: simTime(0),
+          workerId: "dialogue-replay-worker",
+        }),
+      ).toBe(1);
+      expect(forbiddenCalls.value).toBe(0);
+
+      const replayed = await new PostgresCognitionRepository(pool).get(
+        worldId,
+        requestId,
+      );
+      expect(replayed?.status).toBe("completed");
+
+      const messages = await pool.query<{
+        text: string;
+        ordinal: number;
+      }>(
+        "SELECT text, ordinal FROM conversation_messages WHERE world_id = $1 AND conversation_id = $2 ORDER BY ordinal",
+        [worldId, conversationId],
+      );
+      expect(messages.rows).toEqual([
+        {
+          text: "I think the cafe closes at 18.",
+          ordinal: 1,
+        },
+      ]);
+
+      const deliveries = await pool.query<{ status: string }>(
+        "SELECT status FROM conversation_deliveries WHERE world_id = $1 AND message_id = $2",
+        [
+          worldId,
+          "runtime:dialogue:message:" + conversationId + ":turn-1",
+        ],
+      );
+      expect(deliveries.rows).toEqual([{ status: "completed" }]);
+    },
+    30_000,
+  );
 });
