@@ -341,28 +341,47 @@
 - [ ] The first production dialogue runtime is two-person only. Group conversations, spatial/proximity participant selection and interruption by richer activity/location state remain future work.
 - [ ] Dialogue affordances currently cover private-belief sharing and small talk; richer question/answer, topic management, promises and executable social actions require later domain slices.
 
+## Durable multi-worker affinity gate completed
+
+- [x] `ScheduledEvent`, periodic routines and commitments carry canonical durable `affinityKeys` describing the authoritative resources a handler may mutate.
+- [x] Migration `0011_scheduler_affinity.sql` persists affinity on scheduled events/routines/commitments and backfills existing durable physiology, planning, employment, rent and dialogue work.
+- [x] The scheduler serializes only the short claim transaction per world with a PostgreSQL transaction-scoped advisory lock; handler execution itself is not globally locked.
+- [x] Processing leases are also durable affinity reservations. A second worker may claim independent same-frontier work, while events sharing any reserved key remain pending.
+- [x] Stale-lease requeue releases both scheduler ownership and affinity ownership atomically through the existing durable recovery boundary.
+- [x] Current resource namespaces cover people/entities, ledger accounts, housing units and conversations.
+- [x] Physiology and planning reserve the target person; employment reserves employee plus payroll accounts; rent reserves tenant plus housing/account resources; dialogue reserves the conversation and both participants.
+- [x] Social opportunities bind speaker + listener before normal execution. Legacy pre-affinity social events are converted into a replacement event with complete listener affinity before any listener mutation occurs.
+- [x] Conversation delivery processing now claims the exact `messageId + listenerId` delivery in listener order, so a social/dialogue handler cannot accidentally consume another conversation's pending side effects outside its affinity lease.
+- [x] A deliberate overlap gate proves two independent entity-affinity handlers execute concurrently on separate workers rather than through a global execution lock.
+- [x] Contended scheduler gates prove two same-frontier events for one entity cannot be leased concurrently while unrelated work can proceed.
+- [x] Crash/requeue gates prove stale affinity leases recover without allowing a later conflicting event to overtake the abandoned event.
+- [x] Two-worker production-runtime gates converge to the same semantic state as the sequential runtime for physiology/inventory, the 20-agent 30-day integrated-life fixture and the multi-turn dialogue fixture.
+- [x] Core simulation CI run #274 is green for the multi-worker affinity milestone.
+
 ### Runtime concurrency boundary
 
-- [x] The production gate proves the safe/default sequential worker path over the durable scheduler.
-- [ ] Multi-worker handling of simultaneous events that can mutate the same person is not yet claimed safe. Before enabling that mode, the runtime needs explicit person/entity affinity or equivalent conflict serialization on top of the scheduler's same-frontier parallelism.
+- [x] Sequential execution remains valid and uses the same durable scheduler path.
+- [x] Multi-worker execution is supported for the currently declared production scheduled-event handlers.
+- [x] Affinity guarantees conflict safety, not fair distribution: one worker may legitimately drain more frontier work than another.
+- [ ] Every future handler that mutates a new shared resource must declare all of that resource's affinity keys before it is considered multi-worker safe.
 
 ### Current CI gate
 
 - [x] TypeScript typecheck green across the 15-project workspace, including `@hobbo/runtime` and `@hobbo/planning`.
 - [x] 115/115 non-integration tests green across 22 files, including deterministic planning and Granite dialogue-mode contracts.
-- [x] 71/71 PostgreSQL database integration tests green on PostgreSQL 17, including durable planning persistence.
-- [x] 6/6 PostgreSQL runtime integration tests green across 4 files, including integrated-life, social-life, multi-day planning, sustained dialogue and cognition-replay crash gates.
-- [x] Database migrations `0001` through `0010` plus all SQL smoke checks green.
+- [x] 74/74 PostgreSQL database integration tests green across 19 files on PostgreSQL 17, including durable planning, affinity claims and ordered specific deliveries.
+- [x] 10/10 PostgreSQL runtime integration tests green across 5 files, including integrated-life, social-life, planning, sustained dialogue, cognition replay and multi-worker affinity/crash gates.
+- [x] Database migrations `0001` through `0011` plus all SQL smoke checks green.
 - [x] 20-agent, 30-day durable physiology restart gate green.
 - [x] 20-agent, 30-day durable employment/rent restart gate green.
 - [x] 20-agent, 30-day durable integrated runtime gate green.
-- [x] Scheduler temporal-frontier concurrency gate green.
+- [x] Scheduler temporal-frontier concurrency and durable resource-affinity gates green.
 - [x] Real Granite cognition and Nomic embedding GGUF smoke tests green through pinned llama.cpp.
 - [x] Real Granite cognition smoke passes through `GraniteCognitiveProvider`, not only the raw endpoint request.
 - [x] Real Granite dialogue-mode smoke consumes the production visible dialogue context and affordance contract through pinned llama.cpp.
 - [x] Real Nomic embedding smoke passes through `NomicEmbeddingProvider`, not only the raw endpoint request.
 
-The deterministic/event-driven kernel is now proven across body/inventory, work, missed obligations, salary, housing/rent, commitments, conversations, model-driven utterances, rumor propagation, private beliefs, memories, relationships, long-term goals, conflict-aware plans, reflections, event history and future scheduling with restart-equivalent durable gates. The next major infrastructure gap is explicit same-person/entity affinity or equivalent conflict serialization before enabling multi-worker production runtime mode.
+The deterministic/event-driven kernel is now proven across body/inventory, work, missed obligations, salary, housing/rent, commitments, conversations, model-driven utterances, rumor propagation, private beliefs, memories, relationships, long-term goals, conflict-aware plans, reflections, event history, future scheduling and multi-worker resource conflicts with restart-equivalent durable gates. The next implementation milestone moves into the deterministic visual build pipeline: the minimal Sprite Forge Blender fixture.
 
 ## Next implementation milestones
 
@@ -375,7 +394,7 @@ The deterministic/event-driven kernel is now proven across body/inventory, work,
 - [x] 20-agent long-running social simulation gate driven by `@hobbo/runtime`.
 - [x] Long-term goals/plans and reflection over multi-day histories.
 - [x] Sustained model-generated dialogue using the durable conversation substrate, with real Granite contract smoke.
-- [ ] Explicit same-person affinity/serialization before multi-worker runtime mode.
+- [x] Explicit resource affinity/serialization for multi-worker runtime mode.
 - [ ] Minimal Sprite Forge Blender fixture.
 
-The long-running deterministic, social, planning/reflection and durable model/replay dialogue gates are now met. The default sequential runtime remains the supported production mode; multi-worker execution must stay disabled until same-person/entity conflicts are explicitly serialized.
+The long-running deterministic, social, planning/reflection, durable dialogue and multi-worker affinity gates are now met. Both sequential and contended multi-worker execution are covered for the current production event set; new handler types must extend the affinity contract when they introduce new shared mutable resources.
