@@ -1,0 +1,73 @@
+html,
+body {
+  margin: 0;
+  min-height: 100%;
+  background: #11151b;
+  color: #e9edf2;
+  font-family: system-ui, sans-serif;
+}
+
+body {
+  min-height: 100vh;
+}
+
+.shell {
+  min-height: 100vh;
+  display: grid;
+  grid-template-rows: auto 1fr;
+}
+
+.toolbar {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 1rem;
+  padding: 0.8rem 1rem;
+  background: #1a2029;
+  border-bottom: 1px solid #303845;
+}
+
+.toolbar > div {
+  display: flex;
+  align-items: center;
+  gap: 0.8rem;
+}
+
+#status {
+  color: #96a0ad;
+  font-size: 0.9rem;
+}
+
+.controls {
+  flex-wrap: wrap;
+}
+
+button {
+  border: 1px solid #4a5667;
+  border-radius: 0.35rem;
+  background: #273141;
+  color: inherit;
+  padding: 0.45rem 0.75rem;
+  cursor: pointer;
+}
+
+button:hover {
+  background: #334155;
+}
+
+.world {
+  min-height: 600px;
+  display: grid;
+  place-items: center;
+  overflow: hidden;
+}
+
+.world canvas {
+  image-rendering: pixelated;
+  max-width: 100%;
+  height: auto;
+  border: 1px solid #303845;
+  background:
+    linear-gradient(30deg, rgba(255, 255, 255, 0.025) 12%, transparent 12.5%, transparent 87%, rgba(255, 255, 255, 0.025) 87.5%, rgba(255, 255, 255, 0.025)),
+    #171d25;
+}
