@@ -18,6 +18,7 @@ import {
 } from "@hobbo/database";
 import type { WorldDirectorCognitionContext } from "@hobbo/director";
 import {
+  asAffordanceId,
   asPersonId,
   asWorldId,
   simDuration,
@@ -199,6 +200,55 @@ describe("durable bounded World Director runtime", () => {
     expect((await events.list(worldId)).map((event) => event.type)).toEqual([
       "world_director.review_completed",
       "world.opportunity_available",
+    ]);
+  });
+
+  it("fails open on an unavailable model affordance without blocking the world", async () => {
+    const worldId = await seed("world-director-invalid-affordance");
+    const runtime = new CoreWorldRuntime(pool, {
+      director: policy,
+      directorProvider:
+        new DeterministicTraceableCognitiveProvider<WorldDirectorCognitionContext>({
+          id: "world-director-invalid-provider",
+          modelId: "world-director-invalid-provider",
+          strategy: () => ({
+            affordanceId: asAffordanceId("not-offered"),
+            intent: "Invalid selection",
+          }),
+        }),
+    });
+    await runtime.scheduleInitialDirector(worldId, simTime(10));
+
+    expect(
+      await runtime.processThrough({
+        worldId,
+        through: simTime(10),
+        workerId: "director-invalid-worker",
+        maxEvents: 1,
+      }),
+    ).toBe(1);
+
+    expect((await events.list(worldId)).map((event) => event.type)).toEqual([
+      "world_director.review_failed",
+    ]);
+    expect(await proposals.getByTriggerEvent(
+      worldId,
+      "runtime:director:review-1",
+    )).toBeUndefined();
+    expect(
+      await cognition.get(
+        worldId,
+        "world-director:cognition:runtime:director:review-1" as never,
+      ),
+    ).toMatchObject({ status: "failed" });
+    expect((await schedules.loadPending(worldId)).map((entry) => ({
+      id: entry.event.id,
+      dueAt: entry.event.dueAt,
+    }))).toEqual([
+      {
+        id: "runtime:director:review-2",
+        dueAt: simTime(3_610),
+      },
     ]);
   });
 

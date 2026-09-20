@@ -3113,6 +3113,18 @@ export class DurableWorldDirectorRuntime {
       return;
     }
 
+    let nextOccurrence = payload.occurrence + 1;
+    let nextAnchor = addSimTime(anchorDueAt, this.#policy.period);
+    while (nextAnchor <= at) {
+      nextAnchor = addSimTime(nextAnchor, this.#policy.period);
+      nextOccurrence += 1;
+    }
+    const nextReview = worldDirectorReviewEvent(
+      nextOccurrence,
+      nextAnchor,
+      nextAnchor,
+    );
+
     let proposal = await this.#repository.getByTriggerEvent(
       context.worldId,
       String(context.scheduled.event.id),
@@ -3157,14 +3169,43 @@ export class DurableWorldDirectorRuntime {
       const requestId = asCognitionRequestId(
         `world-director:cognition:${context.scheduled.event.id}`,
       );
-      const decision = await this.#executor.decide(context.worldId, {
-        id: requestId,
-        actorId: asEntityId("__world_director__"),
-        simTime: at,
-        correlationId: context.scheduled.event.correlationId,
-        context: worldDirectorCognitionContext(summary),
-        affordances,
-      });
+      let decision;
+      try {
+        decision = await this.#executor.decide(context.worldId, {
+          id: requestId,
+          actorId: asEntityId("__world_director__"),
+          simTime: at,
+          correlationId: context.scheduled.event.correlationId,
+          context: worldDirectorCognitionContext(summary),
+          affordances,
+        });
+      } catch (error) {
+        await commitScheduledEventOutcome(this.#pool, {
+          worldId: context.worldId,
+          eventId: context.scheduled.event.id,
+          workerId: context.workerId,
+          processedAt: at,
+          domainEvents: [
+            {
+              id: asEventId(
+                `runtime:director-failed:${context.scheduled.event.id}`,
+              ),
+              worldId: context.worldId,
+              simTime: at,
+              type: "world_director.review_failed",
+              payload: {
+                occurrence: payload.occurrence,
+                reason: "cognition_failure",
+                errorName:
+                  error instanceof Error ? error.name : "UnknownError",
+              },
+              correlationId: context.scheduled.event.correlationId,
+            },
+          ],
+          scheduledEvents: [nextReview],
+        });
+        return;
+      }
       const selected = affordances.find(
         (affordance) => affordance.id === decision.affordanceId,
       );
@@ -3193,15 +3234,7 @@ export class DurableWorldDirectorRuntime {
       });
     }
 
-    let nextOccurrence = payload.occurrence + 1;
-    let nextAnchor = addSimTime(anchorDueAt, this.#policy.period);
-    while (nextAnchor <= at) {
-      nextAnchor = addSimTime(nextAnchor, this.#policy.period);
-      nextOccurrence += 1;
-    }
-    const scheduledEvents: ScheduledEvent[] = [
-      worldDirectorReviewEvent(nextOccurrence, nextAnchor, nextAnchor),
-    ];
+    const scheduledEvents: ScheduledEvent[] = [nextReview];
     if (proposal.status === "accepted") {
       const effect = worldDirectorOpportunityEvent(proposal);
       if (effect.dueAt < at) {
