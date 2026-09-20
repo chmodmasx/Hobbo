@@ -1,0 +1,24 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Hobbo Renderer Fixture</title>
+  </head>
+  <body>
+    <main class="shell">
+      <header class="toolbar">
+        <div>
+          <strong>Hobbo renderer fixture</strong>
+          <span id="status">loading Sprite Forge output…</span>
+        </div>
+        <div class="controls">
+          <span>Direction: <code id="direction-label">N</code></span>
+          <button id="next-direction" type="button">Rotate mannequin</button>
+        </div>
+      </header>
+      <section id="world" class="world" aria-label="Isometric world fixture"></section>
+    </main>
+    <script type="module" src="/src/main.ts"></script>
+  </body>
+</html>
