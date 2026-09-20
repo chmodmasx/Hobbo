@@ -155,3 +155,15 @@ jq -c . "$PARSED_FILE"
 )
 
 echo "GraniteCognitiveProvider live llama.cpp smoke test passed."
+
+(
+  cd "$ROOT_DIR"
+  HOBBO_COGNITION_BASE_URL="http://127.0.0.1:$PORT" \
+  HOBBO_COGNITION_MODEL_ID="hobbo-cognition" \
+    pnpm exec vitest run \
+      packages/runtime/live-test/dialogue.integration.test.ts \
+      --maxWorkers=1 \
+      --no-file-parallelism
+)
+
+echo "Granite dialogue-context live llama.cpp smoke test passed."
