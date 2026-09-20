@@ -29,7 +29,11 @@ import {
   type RoomStateMessage,
   type WireSpatialState,
 } from "@hobbo/realtime";
-import type { RoomBounds } from "@hobbo/spatial";
+import {
+  SPATIAL_TRAVEL_ACTION_ID,
+  isTravelActionInput,
+  type RoomBounds,
+} from "@hobbo/spatial";
 import type { Pool } from "pg";
 import {
   WebSocket,
@@ -267,6 +271,39 @@ export function createHobboServer(options: HobboServerOptions): Server {
           roomId: session.roomId,
         });
         send(socket, await roomMessage(session.worldId, session.roomId));
+      }
+
+      if (message.actionId === String(SPATIAL_TRAVEL_ACTION_ID)) {
+        if (!isTravelActionInput(message.input)) {
+          throw new RealtimeProtocolError(
+            "invalid_message",
+            "spatial.travel requires a non-empty destinationRoomId",
+          );
+        }
+        const world = await worlds.get(session.worldId);
+        if (world === undefined) {
+          throw new DomainInvariantError(
+            `World does not exist: ${session.worldId}`,
+          );
+        }
+        const travel = await city.planTravel({
+          worldId: session.worldId,
+          travelId: message.requestId,
+          personId: session.personId,
+          destinationRoomId: message.input.destinationRoomId,
+          departAt: world.currentSimTime,
+          origin: "player",
+        });
+        send(socket, {
+          type: "player.travel_planned",
+          requestId: message.requestId,
+          travelId: travel.id,
+          destinationRoomId: travel.destinationRoomId,
+          departAt: travel.departAt.toString(),
+          arriveAt: travel.arriveAt.toString(),
+          status: travel.status,
+        });
+        return;
       }
 
       const bounds = await resolveRoomBounds(session.worldId, session.roomId);

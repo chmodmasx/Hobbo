@@ -52,6 +52,16 @@ export type PlayerActionResultMessage =
       readonly message: string;
     };
 
+export interface PlayerTravelPlannedMessage {
+  readonly type: "player.travel_planned";
+  readonly requestId: string;
+  readonly travelId: string;
+  readonly destinationRoomId: string;
+  readonly departAt: string;
+  readonly arriveAt: string;
+  readonly status: "planned" | "travelling" | "arrived" | "cancelled";
+}
+
 export interface RealtimeErrorMessage {
   readonly type: "error";
   readonly code: string;
@@ -63,6 +73,7 @@ export type RealtimeServerMessage =
   | SessionReadyMessage
   | RoomStateMessage
   | PlayerActionResultMessage
+  | PlayerTravelPlannedMessage
   | RealtimeErrorMessage;
 
 export class RealtimeProtocolError extends Error {

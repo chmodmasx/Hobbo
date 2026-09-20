@@ -46,30 +46,62 @@ function person(id: string): PersonState {
   };
 }
 
-function nextMessage(
-  socket: WebSocket,
-  predicate: (message: RealtimeServerMessage) => boolean,
-): Promise<RealtimeServerMessage> {
-  return new Promise((resolve, reject) => {
-    const timer = setTimeout(
-      () => reject(new Error("Timed out waiting for realtime message")),
-      5_000,
-    );
-    const handler = (raw: RawData) => {
+class Inbox {
+  readonly #queue: RealtimeServerMessage[] = [];
+  readonly #waiters: Array<{
+    predicate: (message: RealtimeServerMessage) => boolean;
+    resolve: (message: RealtimeServerMessage) => void;
+    timer: ReturnType<typeof setTimeout>;
+  }> = [];
+
+  constructor(socket: WebSocket) {
+    socket.on("message", (raw: RawData) => {
       const message = JSON.parse(raw.toString()) as RealtimeServerMessage;
-      if (!predicate(message)) return;
-      clearTimeout(timer);
-      socket.off("message", handler);
-      resolve(message);
-    };
-    socket.on("message", handler);
-  });
+      const index = this.#waiters.findIndex((waiter) =>
+        waiter.predicate(message),
+      );
+      if (index >= 0) {
+        const waiter = this.#waiters.splice(index, 1)[0];
+        if (waiter !== undefined) {
+          clearTimeout(waiter.timer);
+          waiter.resolve(message);
+          return;
+        }
+      }
+      this.#queue.push(message);
+    });
+  }
+
+  take(
+    predicate: (message: RealtimeServerMessage) => boolean,
+  ): Promise<RealtimeServerMessage> {
+    const index = this.#queue.findIndex(predicate);
+    if (index >= 0) {
+      const message = this.#queue.splice(index, 1)[0];
+      if (message !== undefined) return Promise.resolve(message);
+    }
+
+    return new Promise((resolve, reject) => {
+      const timer = setTimeout(() => {
+        const index = this.#waiters.findIndex(
+          (waiter) => waiter.resolve === resolve,
+        );
+        if (index >= 0) this.#waiters.splice(index, 1);
+        reject(new Error("Timed out waiting for realtime message"));
+      }, 5_000);
+      this.#waiters.push({ predicate, resolve, timer });
+    });
+  }
 }
 
-async function open(url: string): Promise<WebSocket> {
+async function open(url: string): Promise<{
+  readonly socket: WebSocket;
+  readonly inbox: Inbox;
+}> {
   const socket = new WebSocket(url);
+  const inbox = new Inbox(socket);
   await once(socket, "open");
-  return socket;
+  return { socket, inbox };
 }
 
 async function close(socket: WebSocket): Promise<void> {
@@ -123,11 +155,10 @@ describe("authoritative city realtime binding", () => {
     const port = (server.address() as AddressInfo).port;
     const base = `ws://127.0.0.1:${port}/realtime?worldId=${worldId}&personId=alice`;
 
-    let socket = await open(base);
+    let client = await open(base);
     try {
       expect(
-        await nextMessage(
-          socket,
+        await client.inbox.take(
           (message) => message.type === "session.ready",
         ),
       ).toMatchObject({
@@ -147,17 +178,32 @@ describe("authoritative city realtime binding", () => {
         ]),
       });
 
-      await runtime.planTravel({
-        worldId,
+      client.socket.send(
+        JSON.stringify({
+          type: "player.action",
+          requestId: "realtime-trip",
+          actionId: "spatial.travel",
+          input: { destinationRoomId: "room-work" },
+        }),
+      );
+      expect(
+        await client.inbox.take(
+          (message) =>
+            message.type === "player.travel_planned" &&
+            message.requestId === "realtime-trip",
+        ),
+      ).toMatchObject({
+        type: "player.travel_planned",
         travelId: "realtime-trip",
-        personId,
         destinationRoomId: "room-work",
-        departAt: simTime(10),
-        origin: "player",
+        departAt: "0",
+        arriveAt: "60",
+        status: "planned",
       });
+
       await runtime.processThrough({
         worldId,
-        through: simTime(70),
+        through: simTime(60),
         workerId: "city-realtime-worker",
       });
 
@@ -175,11 +221,10 @@ describe("authoritative city realtime binding", () => {
         },
       });
 
-      await close(socket);
-      socket = await open(base);
+      await close(client.socket);
+      client = await open(base);
       expect(
-        await nextMessage(
-          socket,
+        await client.inbox.take(
           (message) => message.type === "session.ready",
         ),
       ).toMatchObject({
@@ -187,8 +232,7 @@ describe("authoritative city realtime binding", () => {
         roomId: "room-work",
       });
       expect(
-        await nextMessage(
-          socket,
+        await client.inbox.take(
           (message) =>
             message.type === "room.state" &&
             message.roomId === "room-work",
@@ -206,7 +250,7 @@ describe("authoritative city realtime binding", () => {
         ],
       });
     } finally {
-      await close(socket);
+      await close(client.socket);
       await new Promise<void>((resolve, reject) => {
         server.close((error) => {
           if (error === undefined) resolve();

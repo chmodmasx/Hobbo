@@ -43,7 +43,7 @@ interface RenderedEntity {
 interface ClientConfig {
   readonly worldId: string;
   readonly personId: string;
-  readonly roomId: string;
+  readonly roomId?: string;
   readonly endpoint: string;
 }
 
@@ -61,7 +61,7 @@ function clientConfig(): ClientConfig {
   const params = new URLSearchParams(window.location.search);
   const worldId = params.get("worldId") ?? "playable-world";
   const personId = params.get("personId") ?? "player-alice";
-  const roomId = params.get("roomId") ?? "fixture-room";
+  const roomId = params.get("roomId") ?? undefined;
   const explicit = params.get("server");
 
   const endpoint =
@@ -72,12 +72,14 @@ function clientConfig(): ClientConfig {
       : new URL(explicit);
   endpoint.searchParams.set("worldId", worldId);
   endpoint.searchParams.set("personId", personId);
-  endpoint.searchParams.set("roomId", roomId);
+  if (roomId !== undefined) {
+    endpoint.searchParams.set("roomId", roomId);
+  }
 
   return {
     worldId,
     personId,
-    roomId,
+    ...(roomId === undefined ? {} : { roomId }),
     endpoint: endpoint.toString(),
   };
 }
@@ -143,7 +145,7 @@ async function main(): Promise<void> {
 
   worldLabel.textContent = config.worldId;
   personLabel.textContent = config.personId;
-  roomLabel.textContent = config.roomId;
+  roomLabel.textContent = config.roomId ?? "authoritative";
 
   const app = new Application();
   await app.init({
@@ -269,6 +271,7 @@ async function main(): Promise<void> {
     switch (message.type) {
       case "session.ready":
         sessionReady = true;
+        roomLabel.textContent = message.roomId;
         setControls(true);
         flushPending();
         return;
@@ -284,6 +287,11 @@ async function main(): Promise<void> {
           status.textContent =
             `request replayed safely · ${message.requestId}`;
         }
+        return;
+      case "player.travel_planned":
+        pending.delete(message.requestId);
+        status.textContent =
+          `travel ${message.status} · ${message.destinationRoomId} · arrival sim ${message.arriveAt}`;
         return;
       case "error":
         if (
