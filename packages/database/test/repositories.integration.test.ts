@@ -211,6 +211,158 @@ describe("durable scheduler", () => {
     await schedules.complete(worldId, ownedByA.event.id, "worker-a");
   });
 
+  it("serializes conflicting affinity while independent workers keep claiming the frontier", async () => {
+    const worldId = asWorldId("world-affinity-claims");
+    await worlds.create(worldId);
+    const correlationId = asCorrelationId("corr-affinity");
+
+    await schedules.scheduleMany(worldId, [
+      {
+        id: asScheduledEventId("alice-first"),
+        dueAt: simTime(10),
+        type: "test.job",
+        payload: {},
+        correlationId,
+        affinityKeys: ["entity:alice"],
+      },
+      {
+        id: asScheduledEventId("alice-second"),
+        dueAt: simTime(10),
+        type: "test.job",
+        payload: {},
+        correlationId,
+        affinityKeys: ["entity:alice"],
+      },
+      {
+        id: asScheduledEventId("bob-independent"),
+        dueAt: simTime(10),
+        type: "test.job",
+        payload: {},
+        correlationId,
+        affinityKeys: ["entity:bob"],
+      },
+    ]);
+
+    const [firstClaim, secondClaim] = await Promise.all([
+      schedules.claimDue(worldId, simTime(10), "worker-a", 1),
+      schedules.claimDue(worldId, simTime(10), "worker-b", 1),
+    ]);
+
+    const claimedIds = [...firstClaim, ...secondClaim]
+      .map((entry) => String(entry.event.id))
+      .sort();
+    expect(claimedIds).toEqual(["alice-first", "bob-independent"]);
+    expect(
+      [...firstClaim, ...secondClaim].some(
+        (entry) => entry.event.id === "alice-second",
+      ),
+    ).toBe(false);
+
+    const aliceClaim = [...firstClaim, ...secondClaim].find(
+      (entry) => entry.event.id === "alice-first",
+    );
+    const bobClaim = [...firstClaim, ...secondClaim].find(
+      (entry) => entry.event.id === "bob-independent",
+    );
+    expect(aliceClaim?.lockedBy).toBeDefined();
+    expect(bobClaim?.lockedBy).toBeDefined();
+
+    if (bobClaim?.lockedBy === undefined || aliceClaim?.lockedBy === undefined) {
+      throw new Error("Affinity fixture did not return owned claims");
+    }
+    await schedules.complete(
+      worldId,
+      bobClaim.event.id,
+      bobClaim.lockedBy,
+    );
+
+    expect(
+      await schedules.claimDue(
+        worldId,
+        simTime(10),
+        "worker-b",
+        1,
+      ),
+    ).toEqual([]);
+
+    await schedules.complete(
+      worldId,
+      aliceClaim.event.id,
+      aliceClaim.lockedBy,
+    );
+    const nextAlice = await schedules.claimDue(
+      worldId,
+      simTime(10),
+      "worker-b",
+      1,
+    );
+    expect(nextAlice.map((entry) => entry.event.id)).toEqual([
+      "alice-second",
+    ]);
+  });
+
+  it("releases durable affinity when a stale processing lease is requeued", async () => {
+    const worldId = asWorldId("world-affinity-stale");
+    await worlds.create(worldId);
+    const correlationId = asCorrelationId("corr-affinity-stale");
+
+    await schedules.scheduleMany(worldId, [
+      {
+        id: asScheduledEventId("affinity-stale-first"),
+        dueAt: simTime(10),
+        type: "test.job",
+        payload: {},
+        correlationId,
+        affinityKeys: ["entity:alice"],
+      },
+      {
+        id: asScheduledEventId("affinity-stale-second"),
+        dueAt: simTime(10),
+        type: "test.job",
+        payload: {},
+        correlationId,
+        affinityKeys: ["entity:alice"],
+      },
+    ]);
+
+    const dead = await schedules.claimDue(
+      worldId,
+      simTime(10),
+      "dead-affinity-worker",
+      1,
+    );
+    expect(dead.map((entry) => entry.event.id)).toEqual([
+      "affinity-stale-first",
+    ]);
+    expect(
+      await schedules.claimDue(
+        worldId,
+        simTime(10),
+        "replacement-worker",
+        1,
+      ),
+    ).toEqual([]);
+
+    await pool.query(
+      `UPDATE scheduled_events
+          SET locked_at = now() - interval '10 minutes'
+        WHERE world_id = $1 AND id = $2`,
+      [worldId, "affinity-stale-first"],
+    );
+    expect(await schedules.requeueStale(worldId, new Date())).toBe(1);
+
+    const recovered = await schedules.claimDue(
+      worldId,
+      simTime(10),
+      "replacement-worker",
+      1,
+    );
+    expect(recovered.map((entry) => entry.event.id)).toEqual([
+      "affinity-stale-first",
+    ]);
+    expect(recovered[0]?.attempts).toBe(2);
+  });
+
   it("requeues stale processing leases so another worker can recover them", async () => {
     const worldId = asWorldId("world-stale-lease");
     await worlds.create(worldId);
