@@ -43,7 +43,7 @@ function affinityPart(value: string): string {
   if (normalized.length === 0) {
     throw new DomainInvariantError("Affinity resource identity cannot be blank");
   }
-  return encodeURIComponent(normalized);
+  return normalized;
 }
 
 export function entityAffinityKey(entityId: string): string {
