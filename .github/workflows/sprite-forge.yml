@@ -10,6 +10,8 @@ on:
       - 'assets/source/**'
       - 'assets/definitions/**'
       - 'docs/ASSET_PIPELINE.md'
+      - 'packages/rendering/**'
+      - 'apps/client/**'
   pull_request:
     paths:
       - '.github/workflows/sprite-forge.yml'
@@ -17,6 +19,8 @@ on:
       - 'assets/source/**'
       - 'assets/definitions/**'
       - 'docs/ASSET_PIPELINE.md'
+      - 'packages/rendering/**'
+      - 'apps/client/**'
 
 permissions:
   contents: read
@@ -35,11 +39,13 @@ jobs:
       - name: Checkout Hobbo
         uses: actions/checkout@v4
 
-      - name: Install Blender
+      - name: Install Blender + workspace
         run: |
+          npm install --global pnpm@10.15.1
           sudo apt-get update
           sudo apt-get install -y --no-install-recommends blender libegl1
           blender --version
+          pnpm install --no-frozen-lockfile
 
       - name: Render fixture twice
         run: |
@@ -59,6 +65,18 @@ jobs:
             --output-dir .cache/sprite-forge/run-b
           python3 tools/sprite-forge/fixtures/validate_fixture.py \
             --compare .cache/sprite-forge/run-a .cache/sprite-forge/run-b
+
+      - name: Validate renderer contract
+        env:
+          SPRITE_FORGE_OUTPUT: .cache/sprite-forge/run-a
+        run: |
+          pnpm --filter @hobbo/rendering validate:generated
+          rm -rf apps/client/public/sprite-forge
+          mkdir -p apps/client/public/sprite-forge
+          cp -a .cache/sprite-forge/run-a/. apps/client/public/sprite-forge/
+          pnpm --filter @hobbo/client build
+          test -f apps/client/dist/sprite-forge/fixture_manifest.json
+          test -f apps/client/dist/sprite-forge/fixture_atlas.png
 
       - name: Upload fixture output
         if: always()
