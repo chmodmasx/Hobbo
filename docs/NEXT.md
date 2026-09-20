@@ -1,22 +1,22 @@
 # Immediate next step
 
-Build the first authoritative playable-human realtime multiplayer slice.
+Build the first hierarchical larger-city spatial slice.
 
-This milestone should prove that a browser player can join a running Hobbo world, submit the same validated action requests used by simulation-controlled people, and receive authoritative realtime state without making the client or render loop a source of world truth.
+This milestone should extend the now-playable authoritative room into a small connected world without turning every inhabitant into a frame-ticked pathfinding agent.
 
-The first playable/realtime gate should:
+The first city-systems gate should:
 
-- add a minimal `apps/server` HTTP/WebSocket entrypoint around the existing authoritative simulation/runtime packages;
-- bind each connected player session to an existing world/person identity rather than creating a parallel player-only state model;
-- route player intents through the shared action registry/validator before any world mutation;
-- keep simulation time and scheduler semantics independent from wall-clock/network cadence;
-- introduce only the smallest spatial state needed for a playable room: orthogonal `(x, y, z)` position plus facing/direction;
-- keep isometric projection exclusively in `@hobbo/rendering`; the server never stores projected screen coordinates;
-- render connected people in the existing PixiJS client using the generated Sprite Forge manifest/atlas;
-- replicate authoritative bounded room state from server to clients and treat client-side interpolation/presentation as cosmetic only;
-- prove two simultaneous browser/client sessions can inhabit the same tiny room and converge on the same authoritative state;
-- include reconnect/retry identities that cannot duplicate an already-applied player action;
-- add integration coverage for invalid actions, duplicate action retries, disconnect/reconnect and two-client state convergence;
-- keep PostgreSQL authoritative for durable state and avoid introducing a second in-memory source of truth.
+- add durable spatial topology for rooms, buildings and streets with stable IDs and explicit traversable connections;
+- keep person positions authoritative as logical world state and keep isometric projection presentation-only;
+- add a small active-area tile grid for local movement while retaining a higher-level graph for travel between rooms/buildings/streets;
+- plan long-distance movement hierarchically: global graph route first, local tile path only inside active areas;
+- express background travel through scheduled departure/arrival consequences rather than realtime per-person ticks;
+- add durable capacity/reservation primitives for interactables such as seats and beds, with concurrent claims serialized safely;
+- route player and NPC navigation through shared action/validation contracts rather than client-only movement rules;
+- persist route/travel intent strongly enough that disconnect/restart cannot teleport, duplicate or lose an in-progress trip;
+- expose bounded room/topology state to the realtime client so room transitions come from authoritative server state;
+- prove a compact fixture containing multiple rooms, at least two buildings and a connecting street;
+- gate deterministic route choice, blocked/unreachable destinations, reservation contention, crash/restart during travel and arrival into a different realtime room;
+- preserve simulation LOD: dormant/macro inhabitants should not require local tile pathfinding until they become spatially active.
 
-Do not add authentication/accounts, matchmaking, large maps, pathfinding, combat, character customization or broad city systems in this slice. The gate is only the smallest end-to-end path from human input → validated authoritative action → durable world state → realtime replication → PixiJS presentation.
+Do not build a procedurally generated city, traffic simulation, combat, vehicles, broad content production or the optional World Director in this slice. The goal is the smallest durable hierarchy that proves room → building → street → building → room travel and capacity reservations.
