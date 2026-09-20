@@ -9,12 +9,16 @@ on:
       - 'models/**'
       - 'scripts/ci/**'
       - 'packages/ai-provider/**'
+      - 'packages/runtime/src/index.ts'
+      - 'packages/runtime/live-test/**'
   pull_request:
     paths:
       - '.github/workflows/model-smoke.yml'
       - 'models/**'
       - 'scripts/ci/**'
       - 'packages/ai-provider/**'
+      - 'packages/runtime/src/index.ts'
+      - 'packages/runtime/live-test/**'
 
 permissions:
   contents: read
