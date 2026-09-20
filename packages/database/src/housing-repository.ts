@@ -27,7 +27,11 @@ import {
   type RentDuePayload,
   type TenancyTerms,
 } from "@hobbo/economy";
-import type { PeriodicRoutine } from "@hobbo/simulation";
+import {
+  housingAffinityKey,
+  ledgerAffinityKey,
+  type PeriodicRoutine,
+} from "@hobbo/simulation";
 import type { Pool, QueryResultRow } from "pg";
 import {
   PostgresLedgerRepository,
@@ -249,6 +253,11 @@ export class PostgresHousingRepository {
         housingUnitId: String(terms.housingUnitId),
         landlordId: String(terms.landlordId),
       },
+      affinityKeys: [
+        housingAffinityKey(String(terms.housingUnitId)),
+        ledgerAffinityKey(String(terms.landlordAccountId)),
+        ledgerAffinityKey(String(terms.tenantAccountId)),
+      ],
     };
 
     return withTransaction(
