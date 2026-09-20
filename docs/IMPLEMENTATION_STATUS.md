@@ -477,6 +477,7 @@ The deterministic/event-driven kernel is proven across body/inventory, work, mis
 - [x] Minimal Sprite Forge Blender fixture.
 - [x] Admin/trace inspector over durable simulation/cognition state.
 - [x] Population scale gates: 100 → 500 → 1000 → 10000 durable dormant/macro agents.
-- [x] Sprite Forge/PixiJS isometric renderer integration.\n- [ ] Playable human/realtime multiplayer.
+- [x] Sprite Forge/PixiJS isometric renderer integration.
+- [ ] Playable human/realtime multiplayer.
 
 The long-running deterministic, social, planning/reflection, durable dialogue, multi-worker affinity, minimal Sprite Forge reproducibility, read-only trace-inspector, dormant/macro population-scale and first isometric renderer gates are now met. The next phase is the first playable human/realtime multiplayer slice.
