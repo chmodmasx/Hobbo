@@ -141,7 +141,7 @@ describe("Sprite Forge rendering contract", () => {
     const raw = rawFixture() as {
       frames: Record<string, unknown>[];
     };
-    raw.frames[1] = { ...raw.frames[0] };
+    raw.frames[1] = { ...raw.frames[0]! };
 
     expect(() => validateSpriteForgeManifest(raw)).toThrow(/duplicate/i);
   });
@@ -151,7 +151,7 @@ describe("Sprite Forge rendering contract", () => {
       frames: Record<string, unknown>[];
     };
     badAnchor.frames[0] = {
-      ...badAnchor.frames[0],
+      ...badAnchor.frames[0]!,
       anchor: [96, 127],
     };
     expect(() => validateSpriteForgeManifest(badAnchor)).toThrow(
@@ -162,7 +162,7 @@ describe("Sprite Forge rendering contract", () => {
       frames: Record<string, unknown>[];
     };
     badAtlas.frames[0] = {
-      ...badAtlas.frames[0],
+      ...badAtlas.frames[0]!,
       atlas: {
         x: 350,
         y: 0,
