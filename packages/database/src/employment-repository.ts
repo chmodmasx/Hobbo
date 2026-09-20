@@ -22,7 +22,10 @@ import {
   type EmploymentShiftPayload,
   type EmploymentTerms,
 } from "@hobbo/economy";
-import type { PeriodicRoutine } from "@hobbo/simulation";
+import {
+  ledgerAffinityKey,
+  type PeriodicRoutine,
+} from "@hobbo/simulation";
 import type { Pool, QueryResultRow } from "pg";
 import {
   PostgresLedgerRepository,
@@ -161,6 +164,10 @@ export class PostgresEmploymentRepository {
         employmentId: String(terms.id),
         employerId: String(terms.employerId),
       },
+      affinityKeys: [
+        ledgerAffinityKey(String(terms.employerAccountId)),
+        ledgerAffinityKey(String(terms.employeeAccountId)),
+      ],
     };
 
     return withTransaction(
