@@ -11,7 +11,11 @@ import {
   type SimDuration,
   type SimTime,
 } from "@hobbo/domain";
-import type { ScheduledEvent } from "./scheduler.ts";
+import {
+  canonicalAffinityKeys,
+  entityAffinityKey,
+  type ScheduledEvent,
+} from "./scheduler.ts";
 
 export const COMMITMENT_DUE_EVENT_TYPE = "commitment.due";
 
@@ -22,6 +26,7 @@ export interface PeriodicRoutine<TPayload = unknown> {
   readonly phase: SimDuration;
   readonly kind: string;
   readonly payload: TPayload;
+  readonly affinityKeys?: readonly string[];
 }
 
 export type CommitmentStatus =
@@ -38,6 +43,7 @@ export interface Commitment<TPayload = unknown> {
   readonly payload: TPayload;
   readonly correlationId: CorrelationId;
   readonly status: CommitmentStatus;
+  readonly affinityKeys?: readonly string[];
   readonly routineId?: RoutineId;
   readonly resolvedAt?: SimTime;
 }
@@ -68,6 +74,10 @@ function assertRoutine(routine: PeriodicRoutine): void {
   if (routine.kind.trim().length === 0) {
     throw new DomainInvariantError("Routine kind cannot be empty");
   }
+  canonicalAffinityKeys([
+    entityAffinityKey(String(routine.ownerId)),
+    ...(routine.affinityKeys ?? []),
+  ]);
 }
 
 function stableIdPart(value: string): string {
@@ -102,6 +112,7 @@ export function createCommitment<TPayload>(input: {
   readonly kind: string;
   readonly payload: TPayload;
   readonly correlationId: CorrelationId;
+  readonly affinityKeys?: readonly string[];
   readonly routineId?: RoutineId;
 }): Commitment<TPayload> {
   if (String(input.id).length === 0) {
@@ -114,8 +125,13 @@ export function createCommitment<TPayload>(input: {
     throw new DomainInvariantError("Commitment kind cannot be empty");
   }
 
+  const affinityKeys = canonicalAffinityKeys([
+    entityAffinityKey(String(input.ownerId)),
+    ...(input.affinityKeys ?? []),
+  ]);
   return {
     ...input,
+    affinityKeys,
     status: "planned",
   };
 }
@@ -144,6 +160,7 @@ export function materializeRoutineCommitment<TPayload>(
     kind: routine.kind,
     payload: routine.payload,
     correlationId: asCorrelationId(`routine:${encodedRoutine}:${suffix}`),
+    affinityKeys: routine.affinityKeys,
     routineId: routine.id,
   });
 }
@@ -182,6 +199,7 @@ export function scheduledEventForCommitment<TPayload>(
         : { routineId: String(commitment.routineId) }),
     },
     correlationId: commitment.correlationId,
+    affinityKeys: commitment.affinityKeys,
   };
 }
 
