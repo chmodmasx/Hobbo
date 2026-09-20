@@ -59,21 +59,33 @@ export interface TraceableCognitiveProvider<TContext = unknown>
   ): Promise<CognitiveProviderRun>;
 }
 
+export type GraniteCognitiveMode = "decision" | "dialogue";
+
 export interface GraniteCognitiveProviderOptions {
   readonly baseUrl: string;
   readonly modelId: string;
   readonly apiKey?: string;
   readonly id?: string;
+  readonly mode?: GraniteCognitiveMode;
   readonly maxTokens?: number;
+  readonly intentMaxLength?: number;
   readonly fetch?: CognitiveFetch;
   readonly nowMs?: () => number;
 }
 
-const SYSTEM_PROMPT =
+const DECISION_SYSTEM_PROMPT =
   "You are the decision component of a deterministic social simulation. " +
   "Select exactly one affordance supplied by the simulation. " +
   "Never invent actions, memories, observations, or world state. " +
   "Use the supplied context only. Return only the schema-constrained result.";
+
+const DIALOGUE_SYSTEM_PROMPT =
+  "You are the dialogue component of a deterministic social simulation. " +
+  "Select exactly one dialogue affordance supplied by the simulation. " +
+  "Write the exact in-character spoken utterance in the intent field. " +
+  "Never invent actions, memories, observations, beliefs, provenance, or world state. " +
+  "Use only the supplied visible context and the selected affordance. " +
+  "Return only the schema-constrained result.";
 
 function normalizeBaseUrl(baseUrl: string): string {
   const trimmed = baseUrl.trim().replace(/\/+$/, "");
@@ -223,7 +235,11 @@ export class DeterministicTraceableCognitiveProvider<TContext = unknown>
   }
 }
 
-function buildSchema(request: CognitiveRequest): unknown {
+function buildSchema(
+  request: CognitiveRequest,
+  intentMaxLength: number,
+  mode: GraniteCognitiveMode,
+): unknown {
   const ids = request.affordances.map((affordance) => String(affordance.id));
   if (ids.length === 0) {
     throw new DomainInvariantError(
@@ -239,7 +255,7 @@ function buildSchema(request: CognitiveRequest): unknown {
   return {
     type: "json_schema",
     json_schema: {
-      name: "hobbo_decision",
+      name: mode === "dialogue" ? "hobbo_dialogue_turn" : "hobbo_decision",
       strict: true,
       schema: {
         type: "object",
@@ -251,7 +267,7 @@ function buildSchema(request: CognitiveRequest): unknown {
           intent: {
             type: "string",
             minLength: 1,
-            maxLength: 80,
+            maxLength: intentMaxLength,
           },
         },
         required: ["affordance_id", "intent"],
@@ -261,7 +277,10 @@ function buildSchema(request: CognitiveRequest): unknown {
   };
 }
 
-function buildUserContent<TContext>(request: CognitiveRequest<TContext>): string {
+function buildUserContent<TContext>(
+  request: CognitiveRequest<TContext>,
+  mode: GraniteCognitiveMode,
+): string {
   const payload = {
     request_id: String(request.id),
     actor_id: String(request.actorId),
@@ -274,7 +293,11 @@ function buildUserContent<TContext>(request: CognitiveRequest<TContext>): string
       context: affordance.context,
     })),
   };
-  return `Choose exactly one available affordance from this input:\n${jsonStringify(
+  const instruction =
+    mode === "dialogue"
+      ? "Choose exactly one available dialogue affordance and write the exact spoken utterance in intent from this input:"
+      : "Choose exactly one available affordance from this input:";
+  return `${instruction}\n${jsonStringify(
     payload,
     "Cognition prompt payload",
   )}`;
@@ -364,6 +387,7 @@ function decisionFromUnknown(
   payload: unknown,
   request: CognitiveRequest,
   providerId: string,
+  intentMaxLength: number,
 ): CognitiveDecision {
   if (typeof payload !== "object" || payload === null) {
     throw new DomainInvariantError("Cognition decision must be an object");
@@ -388,7 +412,7 @@ function decisionFromUnknown(
   if (
     typeof candidate.intent !== "string" ||
     candidate.intent.trim().length === 0 ||
-    candidate.intent.length > 80
+    candidate.intent.length > intentMaxLength
   ) {
     throw new DomainInvariantError("Cognition decision intent is invalid");
   }
@@ -416,7 +440,9 @@ export class GraniteCognitiveProvider<TContext = unknown>
   readonly modelId: string;
   readonly #baseUrl: string;
   readonly #apiKey: string | undefined;
+  readonly #mode: GraniteCognitiveMode;
   readonly #maxTokens: number;
+  readonly #intentMaxLength: number;
   readonly #fetch: CognitiveFetch;
   readonly #nowMs: () => number;
 
@@ -426,17 +452,28 @@ export class GraniteCognitiveProvider<TContext = unknown>
     if (modelId.length === 0) {
       throw new DomainInvariantError("Cognition model id cannot be blank");
     }
-    const maxTokens = options.maxTokens ?? 96;
+    const mode = options.mode ?? "decision";
+    const maxTokens = options.maxTokens ?? (mode === "dialogue" ? 192 : 96);
     if (!Number.isSafeInteger(maxTokens) || maxTokens <= 0) {
       throw new DomainInvariantError(
         "Cognition maxTokens must be a positive safe integer",
       );
     }
 
+    const intentMaxLength =
+      options.intentMaxLength ?? (mode === "dialogue" ? 280 : 80);
+    if (!Number.isSafeInteger(intentMaxLength) || intentMaxLength <= 0) {
+      throw new DomainInvariantError(
+        "Cognition intentMaxLength must be a positive safe integer",
+      );
+    }
+
     this.id = options.id ?? "granite-openai-compatible";
     this.modelId = modelId;
     this.#apiKey = options.apiKey;
+    this.#mode = mode;
     this.#maxTokens = maxTokens;
+    this.#intentMaxLength = intentMaxLength;
     this.#fetch = options.fetch ?? defaultCognitiveFetch;
     this.#nowMs = options.nowMs ?? (() => Date.now());
   }
@@ -450,7 +487,11 @@ export class GraniteCognitiveProvider<TContext = unknown>
       );
     }
 
-    const schemaConfig = buildSchema(request);
+    const schemaConfig = buildSchema(
+      request,
+      this.#intentMaxLength,
+      this.#mode,
+    );
     const samplingConfig = {
       temperature: 0,
       max_tokens: this.#maxTokens,
@@ -463,8 +504,14 @@ export class GraniteCognitiveProvider<TContext = unknown>
       model: this.modelId,
       ...samplingConfig,
       messages: [
-        { role: "system", content: SYSTEM_PROMPT },
-        { role: "user", content: buildUserContent(request) },
+        {
+          role: "system",
+          content:
+            this.#mode === "dialogue"
+              ? DIALOGUE_SYSTEM_PROMPT
+              : DECISION_SYSTEM_PROMPT,
+        },
+        { role: "user", content: buildUserContent(request, this.#mode) },
       ],
       response_format: schemaConfig,
     };
@@ -530,6 +577,7 @@ export class GraniteCognitiveProvider<TContext = unknown>
       parseMessageContent(payload),
       request,
       this.id,
+      this.#intentMaxLength,
     );
     const usage = parseUsage(payload);
     const latencyMs = Math.max(0, Math.round(finishedAt - startedAt));
