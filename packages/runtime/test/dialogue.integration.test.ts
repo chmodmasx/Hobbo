@@ -661,7 +661,10 @@ describe("durable model-driven dialogue runtime", () => {
         expect(multiCounts[0] + multiCounts[1]).toBe(
           controlFirst + controlSecond,
         );
-        expect(multiCounts.every((count) => count > 0)).toBe(true);
+        // Affinity guarantees safety and semantic equivalence, not fair
+        // scheduler distribution. One worker may legitimately drain the
+        // available frontier before the other receives a claim.
+        expect(multiCounts).toHaveLength(2);
 
         const multi = await snapshot(pool, multiSetup.worldId);
         expect(semanticDialogueSnapshot(multi)).toEqual(
