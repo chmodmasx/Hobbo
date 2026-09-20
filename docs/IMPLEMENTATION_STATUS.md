@@ -463,6 +463,20 @@ The deterministic/event-driven kernel is proven across body/inventory, work, mis
 - [x] The uploaded fixture artifact digest is `sha256:cf05827afd7d3f63247ab9e2b120e7f20b897fb924d22f28cddfe32212a11e93`.
 - [x] Presentation remains non-authoritative: the client contains no gameplay/world mutation path.
 
+## Playable human / realtime multiplayer gate completed
+
+- [x] Migration `0012_realtime_spatial.sql` adds durable per-person logical `(x, y, z)` position/facing and durable player-action receipts.
+- [x] Player movement uses the shared `ActionRegistry` with origin `player`; the WebSocket transport never mutates world state directly.
+- [x] Exact player-action retries are durable and idempotent across reconnect/restart; reusing a request ID with different semantics is rejected.
+- [x] Concurrent moves for one person serialize through PostgreSQL without lost spatial updates or duplicate causal events.
+- [x] Network cadence does not advance simulation time, and the server never persists isometric/projected screen coordinates.
+- [x] `apps/server` exposes read-only HTTP room state plus an authoritative WebSocket session bound to an existing world/person/room identity.
+- [x] The realtime integration gate uses two actual WebSocket clients in one room, proves bidirectional room-state convergence, rejects an invalid action and reconnects/replays an acknowledged request without moving twice.
+- [x] The PixiJS client renders every person from authoritative `room.state` messages using generated Sprite Forge frames, logical positions, facing, anchors and deterministic isometric depth ordering.
+- [x] Unacknowledged client requests retain their original request IDs and are resent unchanged after reconnect; reconciliation authority remains server/PostgreSQL-side.
+- [x] Sprite Forge fixture CI #6 (`35489123959`) stayed green, including generated fixture validation, renderer contract validation and browser build.
+- [x] Population Scale CI #6 (`35489123977`) stayed green across the established durable population ladder.
+
 ## Next implementation milestones
 
 - [x] Memory storage/retrieval and Nomic embedding integration.
@@ -479,6 +493,6 @@ The deterministic/event-driven kernel is proven across body/inventory, work, mis
 - [x] Admin/trace inspector over durable simulation/cognition state.
 - [x] Population scale gates: 100 → 500 → 1000 → 10000 durable dormant/macro agents.
 - [x] Sprite Forge/PixiJS isometric renderer integration.
-- [ ] Playable human/realtime multiplayer.
+- [x] Playable human/realtime multiplayer.\n- [ ] Larger city systems.
 
-The long-running deterministic, social, planning/reflection, durable dialogue, multi-worker affinity, minimal Sprite Forge reproducibility, read-only trace-inspector, dormant/macro population-scale and first isometric renderer gates are now met. The next phase is the first playable human/realtime multiplayer slice.
+The long-running deterministic, social, planning/reflection, durable dialogue, multi-worker affinity, Sprite Forge, read-only trace-inspector, dormant/macro population-scale, isometric renderer and first playable/realtime gates are now met. The next phase is the first hierarchical larger-city spatial slice.
