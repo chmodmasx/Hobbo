@@ -6,7 +6,9 @@ from __future__ import annotations
 import argparse
 import json
 import math
+import struct
 import sys
+import zlib
 from pathlib import Path
 
 import bpy
@@ -26,6 +28,132 @@ DIRECTIONS = (
     ("NW", 315.0),
 )
 FURNITURE_DIRECTIONS = ("N", "E", "S", "W")
+PNG_SIGNATURE = b"\x89PNG\r\n\x1a\n"
+
+
+def png_chunk(kind: bytes, payload: bytes) -> bytes:
+    checksum = zlib.crc32(kind + payload) & 0xFFFFFFFF
+    return (
+        struct.pack(">I", len(payload))
+        + kind
+        + payload
+        + struct.pack(">I", checksum)
+    )
+
+
+def paeth_predictor(left: int, up: int, upper_left: int) -> int:
+    estimate = left + up - upper_left
+    distance_left = abs(estimate - left)
+    distance_up = abs(estimate - up)
+    distance_upper_left = abs(estimate - upper_left)
+    if distance_left <= distance_up and distance_left <= distance_upper_left:
+        return left
+    if distance_up <= distance_upper_left:
+        return up
+    return upper_left
+
+
+def canonicalize_png(path: Path) -> None:
+    """Rewrite Blender RGBA PNG bytes with deterministic filtering/compression."""
+
+    data = path.read_bytes()
+    if not data.startswith(PNG_SIGNATURE):
+        raise RuntimeError(f"Not a PNG: {path}")
+
+    offset = len(PNG_SIGNATURE)
+    ihdr = None
+    idat_parts: list[bytes] = []
+    while offset < len(data):
+        length = struct.unpack(">I", data[offset : offset + 4])[0]
+        kind = data[offset + 4 : offset + 8]
+        payload_start = offset + 8
+        payload_end = payload_start + length
+        payload = data[payload_start:payload_end]
+        offset = payload_end + 4
+        if kind == b"IHDR":
+            ihdr = payload
+        elif kind == b"IDAT":
+            idat_parts.append(payload)
+        elif kind == b"IEND":
+            break
+
+    if ihdr is None or not idat_parts:
+        raise RuntimeError(f"PNG lacks IHDR/IDAT: {path}")
+
+    (
+        width,
+        height,
+        bit_depth,
+        color_type,
+        compression_method,
+        filter_method,
+        interlace_method,
+    ) = struct.unpack(">IIBBBBB", ihdr)
+    if (
+        bit_depth != 8
+        or color_type != 6
+        or compression_method != 0
+        or filter_method != 0
+        or interlace_method != 0
+    ):
+        raise RuntimeError(
+            f"Unsupported fixture PNG encoding for canonicalization: {path}"
+        )
+
+    bytes_per_pixel = 4
+    stride = width * bytes_per_pixel
+    filtered = zlib.decompress(b"".join(idat_parts))
+    if len(filtered) != (stride + 1) * height:
+        raise RuntimeError(f"Unexpected PNG scanline length: {path}")
+
+    previous = bytearray(stride)
+    rows: list[bytes] = []
+    cursor = 0
+    for _row_index in range(height):
+        filter_type = filtered[cursor]
+        cursor += 1
+        row = bytearray(filtered[cursor : cursor + stride])
+        cursor += stride
+
+        for index in range(stride):
+            left = row[index - bytes_per_pixel] if index >= bytes_per_pixel else 0
+            up = previous[index]
+            upper_left = (
+                previous[index - bytes_per_pixel]
+                if index >= bytes_per_pixel
+                else 0
+            )
+            if filter_type == 0:
+                value = row[index]
+            elif filter_type == 1:
+                value = row[index] + left
+            elif filter_type == 2:
+                value = row[index] + up
+            elif filter_type == 3:
+                value = row[index] + ((left + up) // 2)
+            elif filter_type == 4:
+                value = row[index] + paeth_predictor(
+                    left,
+                    up,
+                    upper_left,
+                )
+            else:
+                raise RuntimeError(
+                    f"Unsupported PNG filter {filter_type}: {path}"
+                )
+            row[index] = value & 0xFF
+
+        rows.append(bytes(row))
+        previous = row
+
+    canonical_scanlines = b"".join(b"\x00" + row for row in rows)
+    canonical_idat = zlib.compress(canonical_scanlines, level=9)
+    path.write_bytes(
+        PNG_SIGNATURE
+        + png_chunk(b"IHDR", ihdr)
+        + png_chunk(b"IDAT", canonical_idat)
+        + png_chunk(b"IEND", b"")
+    )
 
 
 def cli_args() -> argparse.Namespace:
@@ -340,6 +468,15 @@ def main() -> None:
         )
 
     atlas = build_atlas(output_dir, frames)
+
+    # Raw Blender PNGs may carry process-dependent ancillary bytes even when
+    # the rendered RGBA pixels are identical. Canonicalize the generated
+    # deliverables after atlas composition so final build output is
+    # byte-reproducible without changing Blender's input color interpretation.
+    for frame in frames:
+        canonicalize_png(output_dir / frame["file"])
+    canonicalize_png(output_dir / atlas["file"])
+
     manifest = {
         "schemaVersion": 1,
         "fixture": "minimal-blender-v1",
