@@ -1,14 +1,19 @@
 import { appendFileSync, readFileSync, statSync } from "node:fs";
-import { resolve } from "node:path";
+import { fileURLToPath } from "node:url";
+import { isAbsolute, resolve } from "node:path";
 import {
   CANONICAL_DIRECTIONS,
   frameFor,
   validateSpriteForgeManifest,
 } from "../src/index.ts";
 
-const root = resolve(
-  process.env.SPRITE_FORGE_OUTPUT ?? ".cache/sprite-forge/run-a",
-);
+const repoRoot = fileURLToPath(new URL("../../../", import.meta.url));
+const configuredOutput =
+  process.env.SPRITE_FORGE_OUTPUT ?? ".cache/sprite-forge/run-a";
+const root = isAbsolute(configuredOutput)
+  ? resolve(configuredOutput)
+  : resolve(repoRoot, configuredOutput);
+
 const manifestPath = resolve(root, "fixture_manifest.json");
 const manifest = validateSpriteForgeManifest(
   JSON.parse(readFileSync(manifestPath, "utf8")),
