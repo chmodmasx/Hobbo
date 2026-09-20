@@ -128,5 +128,5 @@ export async function commitScheduledEventOutcome(
       domainEvents: insertedDomainEvents,
       scheduledEvents: insertedScheduledEvents,
     };
-  });
+  }, "read committed");
 }
