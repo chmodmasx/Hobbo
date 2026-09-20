@@ -1,22 +1,22 @@
 # Immediate next step
 
-Build the first read-only admin/trace inspector over Hobbo's durable simulation state.
+Build the durable population scale ladder: 100 → 500 → 1000 → 10000 persisted people.
 
-This milestone should make the already-proven causal model observable without introducing a second source of truth.
+This gate must measure Hobbo's real PostgreSQL scheduler/runtime path, not the old in-memory benchmark loops and not a second simulator.
 
-The first inspector slice should:
+The first scale slice should deliberately model LOD-style background population rather than pretending that 10,000 people are all in LOD 4/5 simultaneously:
 
-- add a reusable read-only trace query layer rather than issuing ad-hoc SQL from UI code;
-- inspect one world/person at a time;
-- expose the current persisted person/body state plus inventory summary;
-- show recent domain events involving the person as actor or target, preserving sequence, sim time, causation and correlation IDs;
-- show outstanding scheduled events that reserve the person through durable affinity keys;
-- show private beliefs, recent memories, directional relationships and recent conversation messages visible in persisted state;
-- show cognition runs for that person with provider/model, replay status/decision and request-hash provenance, without requiring model re-inference;
-- provide bounded pagination/limits so the inspector cannot accidentally dump an entire world;
-- add a minimal local admin surface/API that is strictly read-only;
-- prove through PostgreSQL integration tests that the assembled trace is stable, ordered and world/person isolated.
+- seed each tier as real `persons` + `person_physiology` rows in PostgreSQL;
+- give every person one same-frontier durable scheduled event with its own entity affinity key;
+- execute those events through `CoreWorldRuntime` / `DurableScheduledEventWorker` with multiple workers;
+- commit one real domain event per processed person through the normal atomic scheduled-outcome boundary;
+- verify exact person count, scheduler completion/attempt counts, contiguous domain-event sequence growth, world-time advancement and zero outstanding leases;
+- verify `PostgresPersonRepository.listIds()` remains deterministic at 10,000 people;
+- sample the read-only trace inspector after the run to prove one person's causal trace stays bounded and world-local at population scale;
+- report bootstrap/scheduling/processing/verification timings as CI metrics, but use the workflow timeout rather than a fragile millisecond assertion as the performance ceiling;
+- run 100, 500, 1000 and 10000 as isolated PostgreSQL matrix jobs so one tier cannot contaminate another;
+- keep the 10,000-person gate free of Granite/Nomic calls and O(N²) relationship seeding.
 
-Keep PostgreSQL authoritative. The inspector must not mutate simulation state, complete jobs, requeue leases or call Granite/Nomic.
+Do not claim that this proves 10,000 simultaneous detailed/social/cognitive agents. It proves the intended event-driven dormant/macro population substrate at 10,000 durable people. Higher-LOD density gets separate measured gates later.
 
-Do not build the playable Pixi/React client in this slice. This is observability tooling needed before the 100 → 500 → 1000 → 10000 population scale gates.
+After this ladder is green, move to Sprite Forge/PixiJS isometric renderer integration.
