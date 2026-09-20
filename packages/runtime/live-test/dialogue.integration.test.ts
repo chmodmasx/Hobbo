@@ -135,15 +135,30 @@ describe("Granite live dialogue decision contract", () => {
         },
       });
 
-      const payload = JSON.stringify(run.trace.requestPayload);
-      expect(payload).toContain('"conversationId":"conversation-alice-bob"');
-      expect(payload).toContain('"activePlan"');
-      expect(payload).toContain('"beliefs"');
-      expect(payload).not.toContain('"sourceStatementId"');
-      expect(payload).not.toContain('"claimedSourceEntityId"');
-      expect(payload).not.toContain('"hopCount"');
-      expect(payload).not.toContain('"origin"');
-      expect(payload).not.toContain('"metadata"');
+      const requestPayload = run.trace.requestPayload as {
+        readonly messages: readonly {
+          readonly role: string;
+          readonly content: string;
+        }[];
+      };
+      const systemContent =
+        requestPayload.messages.find((message) => message.role === "system")
+          ?.content ?? "";
+      const userContent =
+        requestPayload.messages.find((message) => message.role === "user")
+          ?.content ?? "";
+
+      expect(systemContent).toContain("exact in-character spoken utterance");
+      expect(userContent).toContain(
+        '"conversationId":"conversation-alice-bob"',
+      );
+      expect(userContent).toContain('"activePlan"');
+      expect(userContent).toContain('"beliefs"');
+      expect(userContent).not.toContain('"sourceStatementId"');
+      expect(userContent).not.toContain('"claimedSourceEntityId"');
+      expect(userContent).not.toContain('"hopCount"');
+      expect(userContent).not.toContain('"origin"');
+      expect(userContent).not.toContain('"metadata"');
     },
     30_000,
   );
