@@ -1,0 +1,27 @@
+{
+  "name": "@hobbo/server",
+  "version": "0.0.0",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "typecheck": "tsc -p tsconfig.json",
+    "start": "tsx src/server.ts",
+    "test:integration": "vitest run test/*.integration.test.ts --maxWorkers=1 --no-file-parallelism"
+  },
+  "dependencies": {
+    "@hobbo/database": "workspace:*",
+    "@hobbo/domain": "workspace:*",
+    "@hobbo/realtime": "workspace:*",
+    "@hobbo/spatial": "workspace:*",
+    "pg": "8.23.0",
+    "ws": "8.18.3"
+  },
+  "devDependencies": {
+    "@hobbo/agents": "workspace:*",
+    "@types/node": "^24.0.0",
+    "@types/pg": "8.23.1",
+    "@types/ws": "8.18.1",
+    "tsx": "^4.20.0",
+    "vitest": "3.2.7"
+  }
+}

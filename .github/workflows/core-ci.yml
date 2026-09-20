@@ -106,3 +106,6 @@ jobs:
 
       - name: Run runtime integration tests
         run: pnpm --filter @hobbo/runtime test:integration
+
+      - name: Run realtime server integration tests
+        run: pnpm --filter @hobbo/server test:integration
