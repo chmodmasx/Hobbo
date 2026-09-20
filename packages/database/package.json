@@ -19,6 +19,7 @@
     "@hobbo/planning": "workspace:*",
     "@hobbo/simulation": "workspace:*",
     "@hobbo/social": "workspace:*",
+    "@hobbo/spatial": "workspace:*",
     "pg": "8.23.0"
   },
   "devDependencies": {
