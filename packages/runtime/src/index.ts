@@ -28,6 +28,7 @@ import {
 } from "@hobbo/conversation";
 import {
   commitScheduledEventOutcome,
+  PostgresCitySpatialRepository,
   PostgresCognitionRepository,
   PostgresConversationDeliveryProcessor,
   PostgresConversationRepository,
@@ -39,7 +40,11 @@ import {
   PostgresRoutineRepository,
   PostgresScheduledEventRepository,
   PostgresSocialRepository,
+  SPATIAL_TRAVEL_ARRIVE_EVENT_TYPE,
+  SPATIAL_TRAVEL_DEPART_EVENT_TYPE,
   type PersistedScheduledEvent,
+  type PersistedTravelIntent,
+  type PlanTravelInput,
 } from "@hobbo/database";
 import {
   DomainInvariantError,
@@ -92,6 +97,23 @@ import type { Pool } from "pg";
 export const PERSON_HUNGER_THRESHOLD_EVENT_TYPE = "person.hunger_threshold";
 export const PERSON_ENERGY_LOW_EVENT_TYPE = "person.energy_low";
 export const PERSON_ENERGY_RECOVERED_EVENT_TYPE = "person.energy_recovered";
+
+function scheduledTravelId(scheduled: PersistedScheduledEvent): string {
+  const payload = scheduled.event.payload;
+  if (
+    typeof payload !== "object" ||
+    payload === null ||
+    Array.isArray(payload) ||
+    !("travelId" in payload) ||
+    typeof payload.travelId !== "string" ||
+    payload.travelId.trim().length === 0
+  ) {
+    throw new DomainInvariantError(
+      `Scheduled event ${scheduled.event.id} has no valid travelId`,
+    );
+  }
+  return payload.travelId;
+}
 
 export interface ScheduledEventHandlerContext {
   readonly worldId: WorldId;
@@ -2784,6 +2806,7 @@ export class CoreWorldRuntime {
   readonly planning: DurablePlanningRuntime;
   readonly dialogue: DurableDialogueRuntime;
   readonly commitments: DurableCommitmentDispatcher;
+  readonly city: PostgresCitySpatialRepository;
   readonly #people: PostgresPersonRepository;
   readonly #routines: PostgresRoutineRepository;
   readonly #employment: PostgresEmploymentRepository;
@@ -2817,6 +2840,7 @@ export class CoreWorldRuntime {
         : { provider: options.dialogueProvider }),
     });
     this.commitments = new DurableCommitmentDispatcher();
+    this.city = new PostgresCitySpatialRepository(pool);
     this.#people = new PostgresPersonRepository(pool);
     this.#routines = new PostgresRoutineRepository(pool);
     this.#employment = new PostgresEmploymentRepository(pool);
@@ -2842,6 +2866,22 @@ export class CoreWorldRuntime {
     );
     registry.register(DIALOGUE_TURN_EVENT_TYPE, (context) =>
       this.dialogue.handleTurn(context),
+    );
+    registry.register(SPATIAL_TRAVEL_DEPART_EVENT_TYPE, (context) =>
+      this.city.departTravelClaimed({
+        worldId: context.worldId,
+        travelId: scheduledTravelId(context.scheduled),
+        scheduledEventId: context.scheduled.event.id,
+        workerId: context.workerId,
+      }),
+    );
+    registry.register(SPATIAL_TRAVEL_ARRIVE_EVENT_TYPE, (context) =>
+      this.city.arriveTravelClaimed({
+        worldId: context.worldId,
+        travelId: scheduledTravelId(context.scheduled),
+        scheduledEventId: context.scheduled.event.id,
+        workerId: context.workerId,
+      }),
     );
 
     this.commitments.register("employment.shift", async (context, due) => {
@@ -2932,6 +2972,10 @@ export class CoreWorldRuntime {
     readonly turnInterval?: SimDuration;
   }): Promise<ScheduledEvent> {
     return this.dialogue.startConversation(input);
+  }
+
+  async planTravel(input: PlanTravelInput): Promise<PersistedTravelIntent> {
+    return this.city.planTravel(input);
   }
 
   async processThrough(input: ProcessScheduledEventsInput): Promise<number> {
