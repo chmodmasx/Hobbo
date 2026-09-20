@@ -76,6 +76,8 @@ import {
 } from "@hobbo/domain";
 import {
   COMMITMENT_DUE_EVENT_TYPE,
+  conversationAffinityKey,
+  entityAffinityKey,
   type CommitmentDuePayload,
   type ScheduledEvent,
 } from "@hobbo/simulation";
@@ -260,6 +262,7 @@ function hungerScheduledEvent(
     correlationId: asCorrelationId(
       `runtime:hunger:${person.id}:${person.mealsEaten}`,
     ),
+    affinityKeys: [entityAffinityKey(String(person.id))],
   };
 }
 
@@ -277,6 +280,7 @@ function sleepScheduledEvent(
     type: PERSON_ENERGY_LOW_EVENT_TYPE,
     payload: personPayload(person.id),
     correlationId: asCorrelationId(`runtime:sleep:${person.id}:${session}`),
+    affinityKeys: [entityAffinityKey(String(person.id))],
   };
 }
 
@@ -297,6 +301,7 @@ function wakeScheduledEvent(
     correlationId: asCorrelationId(
       `runtime:wake:${person.id}:${person.sleepSessions}`,
     ),
+    affinityKeys: [entityAffinityKey(String(person.id))],
   };
 }
 
@@ -381,6 +386,7 @@ export class DurablePhysiologyRuntime {
         payload: personPayload(personId),
         correlationId: context.scheduled.event.correlationId,
         causationId: asEventId(`runtime:hunger-deferred:${context.scheduled.event.id}`),
+        affinityKeys: [entityAffinityKey(String(personId))],
       };
       await commitScheduledEventOutcome(this.#pool, {
         worldId: context.worldId,
@@ -647,6 +653,7 @@ export const DEFAULT_SOCIAL_RUNTIME_POLICY: SocialRuntimePolicy = {
 
 interface SocialOpportunityPayload {
   readonly personId: string;
+  readonly listenerId: string;
   readonly occurrence: number;
   readonly anchorDueAt: string;
 }
@@ -728,6 +735,8 @@ function parseSocialOpportunity(
   if (
     typeof payload.personId !== "string" ||
     payload.personId.length === 0 ||
+    typeof payload.listenerId !== "string" ||
+    payload.listenerId.length === 0 ||
     typeof payload.occurrence !== "number" ||
     !Number.isSafeInteger(payload.occurrence) ||
     payload.occurrence <= 0 ||
@@ -740,6 +749,7 @@ function parseSocialOpportunity(
   simTime(payload.anchorDueAt);
   return {
     personId: payload.personId,
+    listenerId: payload.listenerId,
     occurrence: payload.occurrence,
     anchorDueAt: payload.anchorDueAt,
   };
@@ -747,6 +757,7 @@ function parseSocialOpportunity(
 
 function socialOpportunityEvent(
   personId: PersonId,
+  listenerId: EntityId,
   occurrence: number,
   dueAt: SimTime,
   anchorDueAt: SimTime = dueAt,
@@ -760,12 +771,17 @@ function socialOpportunityEvent(
     type: SOCIAL_CONVERSATION_OPPORTUNITY_EVENT_TYPE,
     payload: {
       personId: String(personId),
+      listenerId: String(listenerId),
       occurrence,
       anchorDueAt: anchorDueAt.toString(),
     } satisfies SocialOpportunityPayload,
     correlationId: asCorrelationId(
       `runtime:social:${personId}:${occurrence}`,
     ),
+    affinityKeys: [
+      entityAffinityKey(String(personId)),
+      entityAffinityKey(String(listenerId)),
+    ],
   };
 }
 
@@ -868,7 +884,8 @@ export class DurableSocialRuntime {
         `Cannot schedule social opportunity for missing person ${personId}`,
       );
     }
-    const event = socialOpportunityEvent(personId, 1, dueAt);
+    const listenerId = await this.#pickListener(worldId, personId, 1);
+    const event = socialOpportunityEvent(personId, listenerId, 1, dueAt);
     await this.#schedules.schedule(worldId, event);
     return event;
   }
@@ -878,6 +895,7 @@ export class DurableSocialRuntime {
   ): Promise<void> {
     const payload = parseSocialOpportunity(context.scheduled);
     const personId = asPersonId(payload.personId);
+    const listenerId = asEntityId(payload.listenerId);
     const at = context.scheduled.event.dueAt;
     const anchorDueAt = simTime(payload.anchorDueAt);
     const person = await this.#people.get(context.worldId, personId);
@@ -904,6 +922,7 @@ export class DurableSocialRuntime {
       );
       const retry = socialOpportunityEvent(
         personId,
+        listenerId,
         payload.occurrence,
         retryAt,
         anchorDueAt,
@@ -936,11 +955,16 @@ export class DurableSocialRuntime {
       return;
     }
 
-    const listenerId = await this.#pickListener(
-      context.worldId,
-      personId,
-      payload.occurrence,
-    );
+    if (
+      (await this.#people.get(
+        context.worldId,
+        asPersonId(String(listenerId)),
+      )) === undefined
+    ) {
+      throw new DomainInvariantError(
+        `Social opportunity listener is missing: ${listenerId}`,
+      );
+    }
     const conversationId = asConversationId(
       `runtime:social:conversation:${personId}:${payload.occurrence}`,
     );
@@ -993,8 +1017,14 @@ export class DurableSocialRuntime {
       nextAnchor = addSimTime(nextAnchor, this.#policy.period);
       nextOccurrence += 1;
     }
+    const nextListenerId = await this.#pickListener(
+      context.worldId,
+      personId,
+      nextOccurrence,
+    );
     const next = socialOpportunityEvent(
       personId,
+      nextListenerId,
       nextOccurrence,
       nextAnchor,
       nextAnchor,
@@ -1372,6 +1402,7 @@ function planningReviewEvent(
     correlationId: asCorrelationId(
       `runtime:planning:${personId}:${occurrence}`,
     ),
+    affinityKeys: [entityAffinityKey(String(personId))],
   };
 }
 
