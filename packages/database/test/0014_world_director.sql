@@ -35,6 +35,18 @@ INSERT INTO cognition_runs (
   'completed'
 );
 
+INSERT INTO scheduled_events (
+  world_id, id, due_at, ordinal, type, payload, correlation_id
+) VALUES (
+  'world-director-sql-test',
+  'director-review-2',
+  20,
+  1,
+  'world_director.review',
+  '{"occurrence":2,"anchorDueAt":"20"}'::jsonb,
+  'director-review-2'
+);
+
 INSERT INTO world_director_proposals (
   world_id, id, trigger_event_id, cognition_request_id,
   affordance_id, status, kind, payload, intent,
@@ -75,7 +87,7 @@ BEGIN
     ) VALUES (
       'world-director-sql-test',
       'proposal-invalid',
-      'director-review-1',
+      'director-review-2',
       'director-cognition-1',
       'candidate',
       'accepted',
