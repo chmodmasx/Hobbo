@@ -408,11 +408,33 @@
 - [x] It cannot complete jobs, requeue leases, mutate beliefs/memories or invoke Granite/Nomic.
 - [ ] Rich filtering, causal graph visualization and realtime streaming can be added later without changing the read-only repository boundary.
 
+## Durable population scale ladder completed
+
+- [x] Added a dedicated production-path scale workflow with isolated PostgreSQL 17 matrix jobs for 100, 500, 1000 and 10000 persisted people.
+- [x] Scale fixtures populate the real `persons` and `person_physiology` schema; only fixture bootstrap is bulk SQL. Scheduling, claims, affinity, handler execution, atomic outcomes, event history and trace inspection use production repositories/runtime code.
+- [x] Every person owns one same-frontier durable scheduled event with a unique entity affinity key.
+- [x] Four concurrent `CoreWorldRuntime` workers process the frontier and commit one real causal domain event per person.
+- [x] The gate verifies exact population size, completed scheduler count, exactly one attempt per job, zero outstanding leases, contiguous event sequences, world-time advancement and scheduler/event cursors.
+- [x] `PostgresPersonRepository.listIds()` remains deterministic at 10000 people.
+- [x] `PostgresTraceRepository` returns a bounded one-person causal trace after the 10000-person run without loading unrelated population state.
+- [x] Granite/Nomic inference and O(N²) relationship seeding are deliberately excluded; this gate models the intended dormant/macro event-driven substrate rather than 10000 simultaneous detailed agents.
+- [x] The first multi-worker scale attempt exposed a real `SERIALIZABLE` abort in `commitScheduledEventOutcome()`; the outcome transaction now uses `READ COMMITTED` with the existing explicit claimed-event/world row locks.
+- [x] A focused PostgreSQL regression test proves independent same-frontier outcomes can commit concurrently while retaining contiguous event sequences and atomic completion.
+- [x] Population scale CI run #2 is green for all four tiers.
+- [x] Observed hosted-run totals: 100 = 557.5 ms, 500 = 1895.1 ms, 1000 = 2491.1 ms, 10000 = 76176.9 ms.
+- [x] The 10000 tier processed all 10000 durable events with four workers in 72.33 s of runtime processing and 76.18 s end-to-end.
+
+### Population scale scope boundary
+
+- [x] This proves 10000 durable dormant/macro people can participate in the production scheduler/event substrate within the CI ceiling.
+- [ ] It does not prove 10000 simultaneous detailed spatial, social or cognitive agents.
+- [ ] Higher-LOD density, spatial/pathfinding load and model-budget scaling require separate measured gates once those systems exist.
+
 ### Current CI gate
 
 - [x] TypeScript typecheck green across the 16-project workspace, including `@hobbo/runtime`, `@hobbo/planning` and `@hobbo/admin`.
 - [x] 119/119 non-integration tests green across 23 files, including deterministic planning, Granite dialogue-mode contracts and the read-only admin HTTP boundary.
-- [x] 77/77 PostgreSQL database integration tests green across 20 files on PostgreSQL 17, including durable planning, affinity claims, ordered specific deliveries and isolated person traces.
+- [x] 78/78 PostgreSQL database integration tests green across 20 files on PostgreSQL 17, including durable planning, affinity claims, concurrent scheduled outcomes, ordered specific deliveries and isolated person traces.
 - [x] 10/10 PostgreSQL runtime integration tests green across 5 files, including integrated-life, social-life, planning, sustained dialogue, cognition replay and multi-worker affinity/crash gates.
 - [x] Database migrations `0001` through `0011` plus all SQL smoke checks green.
 - [x] 20-agent, 30-day durable physiology restart gate green.
@@ -425,7 +447,7 @@
 - [x] Real Nomic embedding smoke passes through `NomicEmbeddingProvider`, not only the raw endpoint request.
 - [x] Sprite Forge CI renders/validates the minimal Blender fixture twice and proves canonical output byte reproducibility.
 
-The deterministic/event-driven kernel is proven across body/inventory, work, missed obligations, salary, housing/rent, commitments, conversations, model-driven utterances, rumor propagation, private beliefs, memories, relationships, long-term goals, conflict-aware plans, reflections, event history, future scheduling and multi-worker resource conflicts with restart-equivalent durable gates. The minimal deterministic Sprite Forge source-to-sprite fixture and read-only durable trace inspector are also green. The next architecture milestone is population scaling.
+The deterministic/event-driven kernel is proven across body/inventory, work, missed obligations, salary, housing/rent, commitments, conversations, model-driven utterances, rumor propagation, private beliefs, memories, relationships, long-term goals, conflict-aware plans, reflections, event history, future scheduling and multi-worker resource conflicts with restart-equivalent durable gates. The minimal deterministic Sprite Forge fixture, read-only trace inspector and 100→500→1000→10000 dormant/macro population ladder are also green. The next architecture milestone is Sprite Forge/PixiJS isometric renderer integration.
 
 ## Next implementation milestones
 
@@ -441,7 +463,7 @@ The deterministic/event-driven kernel is proven across body/inventory, work, mis
 - [x] Explicit resource affinity/serialization for multi-worker runtime mode.
 - [x] Minimal Sprite Forge Blender fixture.
 - [x] Admin/trace inspector over durable simulation/cognition state.
-- [ ] Population scale gates: 100 → 500 → 1000 → 10000 agents.
+- [x] Population scale gates: 100 → 500 → 1000 → 10000 durable dormant/macro agents.
 - [ ] Sprite Forge/PixiJS isometric renderer integration.
 
-The long-running deterministic, social, planning/reflection, durable dialogue, multi-worker affinity, minimal Sprite Forge reproducibility and read-only trace-inspector gates are now met. The next phase is population scaling before Sprite Forge/PixiJS renderer integration.
+The long-running deterministic, social, planning/reflection, durable dialogue, multi-worker affinity, minimal Sprite Forge reproducibility, read-only trace-inspector and dormant/macro population-scale gates are now met. The next phase is Sprite Forge/PixiJS isometric renderer integration.
