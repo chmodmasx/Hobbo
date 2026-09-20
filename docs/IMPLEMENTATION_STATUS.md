@@ -314,7 +314,32 @@
 
 - [x] Medium-term plans are intentionally provisional. The planner blocks currently materialized commitments and scheduled events; recurring obligations that have not yet been materialized are incorporated by subsequent daily reviews rather than predicted as hidden future facts.
 - [ ] Plan intentions are not yet executable commitments/actions. A later slice must decide which intentions become commitments and how cancellation/completion feeds back into goals.
-- [ ] LLM-generated reasoning/text has not yet been connected to planning or dialogue authority; deterministic state transitions remain authoritative.
+- [x] LLM-generated dialogue text is connected only through constrained affordances; planning and all authoritative state transitions remain deterministic.
+
+## Durable model-driven dialogue gate completed
+
+- [x] `dialogue.turn` is a first-class scheduled event handled by `@hobbo/runtime`; there is no parallel dialogue simulator.
+- [x] Dialogue conversations reuse the durable conversation substrate: participants, messages, statements, deliveries, private perceptions/beliefs, memories and directional relationship effects remain owned by `@hobbo/database`.
+- [x] Every generated turn is backed by a durable cognition request with request hash, provider/model identity, visible context, affordances, schema/sampling configuration, decision and raw-response provenance.
+- [x] The deterministic long-run gate uses `DurableCognitionExecutor` plus a traceable mock provider, so the exact persistence/replay path used by Granite is exercised without making CI depend on model stochasticity.
+- [x] A dedicated crash-boundary gate persists cognition first, simulates a process loss before message persistence, restarts with a provider that throws if called, and proves the turn completes through replay with zero new inference calls.
+- [x] Existing persisted messages and completed deliveries are idempotent recovery boundaries: a retried scheduled turn does not regenerate or duplicate already durable conversation state.
+- [x] Model-visible context is assembled from the speaker's private beliefs, directional relationship vector, recent visible memories, prior visible turns and active plan.
+- [x] Hidden statement provenance and memory metadata are withheld from the model context; `origin`, `sourceStatementId`, `claimedSourceEntityId`, `hopCount` and raw memory metadata remain simulation-internal.
+- [x] The runtime converts a selected share-belief affordance back into a validated durable `ConversationStatement`; rumor lineage remains explicit internally through `retellStatement`.
+- [x] Sleeping speakers or listeners defer the turn to the physiology wake frontier via `dialogue.turn_deferred`.
+- [x] The sustained gate runs 4 agents for 7 simulated days across 14 two-person conversations / 56 generated turns while physiology, planning, private belief propagation, memories and relationship effects remain active.
+- [x] The sustained gate deliberately abandons a scheduler lease at the midpoint, closes the PostgreSQL pool, requeues from a fresh pool and proves exact semantic equality against the uninterrupted control run.
+- [x] `GraniteCognitiveProvider` now has an explicit `dialogue` mode: the model must select one supplied dialogue affordance and the `intent` field is defined as the exact spoken utterance, schema-bounded to 280 characters.
+- [x] Model Smoke CI run #22 proves the real locked Granite GGUF through pinned llama.cpp can consume the production dialogue context/affordance shape while preserving the prompt privacy boundary.
+- [x] Core simulation CI run #246 is green for the durable dialogue milestone.
+
+### Dialogue scope boundary
+
+- [x] PostgreSQL state and deterministic validation remain authoritative. The model can select only supplied dialogue affordances and generate utterance text; it cannot directly mutate beliefs, relationships, plans, inventory, money, physiology or world state.
+- [x] The expensive live-GGUF CI path is intentionally a focused dialogue-contract smoke. The sustained 56-turn / 7-day gate is deterministic/replay; GitHub-hosted CPU runners are not used for a week-long real-model quality benchmark.
+- [ ] The first production dialogue runtime is two-person only. Group conversations, spatial/proximity participant selection and interruption by richer activity/location state remain future work.
+- [ ] Dialogue affordances currently cover private-belief sharing and small talk; richer question/answer, topic management, promises and executable social actions require later domain slices.
 
 ### Runtime concurrency boundary
 
@@ -324,9 +349,9 @@
 ### Current CI gate
 
 - [x] TypeScript typecheck green across the 15-project workspace, including `@hobbo/runtime` and `@hobbo/planning`.
-- [x] 112/112 non-integration tests green, including deterministic planning rules.
+- [x] 115/115 non-integration tests green across 22 files, including deterministic planning and Granite dialogue-mode contracts.
 - [x] 71/71 PostgreSQL database integration tests green on PostgreSQL 17, including durable planning persistence.
-- [x] 4/4 PostgreSQL runtime integration tests green, including integrated-life, social-life and multi-day planning restart gates.
+- [x] 6/6 PostgreSQL runtime integration tests green across 4 files, including integrated-life, social-life, multi-day planning, sustained dialogue and cognition-replay crash gates.
 - [x] Database migrations `0001` through `0010` plus all SQL smoke checks green.
 - [x] 20-agent, 30-day durable physiology restart gate green.
 - [x] 20-agent, 30-day durable employment/rent restart gate green.
@@ -334,9 +359,10 @@
 - [x] Scheduler temporal-frontier concurrency gate green.
 - [x] Real Granite cognition and Nomic embedding GGUF smoke tests green through pinned llama.cpp.
 - [x] Real Granite cognition smoke passes through `GraniteCognitiveProvider`, not only the raw endpoint request.
+- [x] Real Granite dialogue-mode smoke consumes the production visible dialogue context and affordance contract through pinned llama.cpp.
 - [x] Real Nomic embedding smoke passes through `NomicEmbeddingProvider`, not only the raw endpoint request.
 
-The deterministic/event-driven kernel is now proven across body/inventory, work, missed obligations, salary, housing/rent, commitments, conversations, rumor propagation, private beliefs, memories, relationships, long-term goals, conflict-aware plans, reflections, event history and future scheduling with restart-equivalent durable gates. The next major simulation gap is sustained LLM-generated dialogue over the existing durable conversation substrate. Multi-worker same-person concurrency also remains unproven.
+The deterministic/event-driven kernel is now proven across body/inventory, work, missed obligations, salary, housing/rent, commitments, conversations, model-driven utterances, rumor propagation, private beliefs, memories, relationships, long-term goals, conflict-aware plans, reflections, event history and future scheduling with restart-equivalent durable gates. The next major infrastructure gap is explicit same-person/entity affinity or equivalent conflict serialization before enabling multi-worker production runtime mode.
 
 ## Next implementation milestones
 
@@ -348,8 +374,8 @@ The deterministic/event-driven kernel is now proven across body/inventory, work,
 - [x] 20-agent durable integrated-life gate combining physiology, employment, housing and commitments on one timeline.
 - [x] 20-agent long-running social simulation gate driven by `@hobbo/runtime`.
 - [x] Long-term goals/plans and reflection over multi-day histories.
-- [ ] Sustained LLM-generated dialogue using the durable conversation substrate.
+- [x] Sustained model-generated dialogue using the durable conversation substrate, with real Granite contract smoke.
 - [ ] Explicit same-person affinity/serialization before multi-worker runtime mode.
 - [ ] Minimal Sprite Forge Blender fixture.
 
-The long-running deterministic, social and planning/reflection gates are now met. Large-scale visual/content production should still wait until sustained dialogue has its own durable model/replay gate.
+The long-running deterministic, social, planning/reflection and durable model/replay dialogue gates are now met. The default sequential runtime remains the supported production mode; multi-worker execution must stay disabled until same-person/entity conflicts are explicitly serialized.
