@@ -14,3 +14,4 @@ export * from "./conversation-repository.ts";
 export * from "./conversation-delivery-processor.ts";
 export * from "./person-repository.ts";
 export * from "./planning-repository.ts";
+export * from "./trace-repository.ts";
