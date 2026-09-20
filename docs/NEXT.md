@@ -1,21 +1,22 @@
 # Immediate next step
 
-Integrate Sprite Forge output into the first PixiJS isometric renderer slice.
+Build the first authoritative playable-human realtime multiplayer slice.
 
-This milestone should prove the generated asset contract is consumable by a real browser renderer without coupling presentation back into simulation authority.
+This milestone should prove that a browser player can join a running Hobbo world, submit the same validated action requests used by simulation-controlled people, and receive authoritative realtime state without making the client or render loop a source of world truth.
 
-The first renderer gate should:
+The first playable/realtime gate should:
 
-- add a dedicated rendering package for pure isometric projection, direction/frame lookup and Sprite Forge manifest validation;
-- keep logical world coordinates orthogonal `(x, y, z)`; isometric projection exists only in rendering code;
-- add a minimal `apps/client` browser app using PixiJS for world sprites and ordinary DOM/React only for UI chrome;
-- consume the generated Sprite Forge fixture atlas/manifest rather than hand-maintained spritesheets;
-- render one mannequin and one chair at deterministic logical coordinates with correct ground anchors;
-- sort sprites by a stable isometric depth key rather than insertion order;
-- demonstrate switching the mannequin through all eight generated directions without changing persistent world identity;
-- keep atlas/frame selection data-driven from the manifest;
-- add unit tests for projection, anchor application, frame lookup, depth ordering and malformed manifest rejection;
-- make CI regenerate the Blender fixture, validate it, then run a renderer contract/build check against that exact generated output;
-- avoid introducing gameplay/world mutation into the client.
+- add a minimal `apps/server` HTTP/WebSocket entrypoint around the existing authoritative simulation/runtime packages;
+- bind each connected player session to an existing world/person identity rather than creating a parallel player-only state model;
+- route player intents through the shared action registry/validator before any world mutation;
+- keep simulation time and scheduler semantics independent from wall-clock/network cadence;
+- introduce only the smallest spatial state needed for a playable room: orthogonal `(x, y, z)` position plus facing/direction;
+- keep isometric projection exclusively in `@hobbo/rendering`; the server never stores projected screen coordinates;
+- render connected people in the existing PixiJS client using the generated Sprite Forge manifest/atlas;
+- replicate authoritative bounded room state from server to clients and treat client-side interpolation/presentation as cosmetic only;
+- prove two simultaneous browser/client sessions can inhabit the same tiny room and converge on the same authoritative state;
+- include reconnect/retry identities that cannot duplicate an already-applied player action;
+- add integration coverage for invalid actions, duplicate action retries, disconnect/reconnect and two-client state convergence;
+- keep PostgreSQL authoritative for durable state and avoid introducing a second in-memory source of truth.
 
-Do not build realtime multiplayer, pathfinding, large maps or character customization in this slice. The gate is only the first deterministic bridge from Sprite Forge artifacts to PixiJS rendering.
+Do not add authentication/accounts, matchmaking, large maps, pathfinding, combat, character customization or broad city systems in this slice. The gate is only the smallest end-to-end path from human input → validated authoritative action → durable world state → realtime replication → PixiJS presentation.
