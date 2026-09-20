@@ -201,7 +201,7 @@ export function findShortestSpatialRoute(
     edges.sort(
       (left, right) =>
         stableTextCompare(left.connectionId, right.connectionId) ||
-        left.nodeId.STABLE_RIGHT_NODE,
+        stableTextCompare(left.nodeId, right.nodeId),
     );
   }
 
