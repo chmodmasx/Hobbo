@@ -1,22 +1,21 @@
 # Immediate next step
 
-Build the durable population scale ladder: 100 → 500 → 1000 → 10000 persisted people.
+Integrate Sprite Forge output into the first PixiJS isometric renderer slice.
 
-This gate must measure Hobbo's real PostgreSQL scheduler/runtime path, not the old in-memory benchmark loops and not a second simulator.
+This milestone should prove the generated asset contract is consumable by a real browser renderer without coupling presentation back into simulation authority.
 
-The first scale slice should deliberately model LOD-style background population rather than pretending that 10,000 people are all in LOD 4/5 simultaneously:
+The first renderer gate should:
 
-- seed each tier as real `persons` + `person_physiology` rows in PostgreSQL;
-- give every person one same-frontier durable scheduled event with its own entity affinity key;
-- execute those events through `CoreWorldRuntime` / `DurableScheduledEventWorker` with multiple workers;
-- commit one real domain event per processed person through the normal atomic scheduled-outcome boundary;
-- verify exact person count, scheduler completion/attempt counts, contiguous domain-event sequence growth, world-time advancement and zero outstanding leases;
-- verify `PostgresPersonRepository.listIds()` remains deterministic at 10,000 people;
-- sample the read-only trace inspector after the run to prove one person's causal trace stays bounded and world-local at population scale;
-- report bootstrap/scheduling/processing/verification timings as CI metrics, but use the workflow timeout rather than a fragile millisecond assertion as the performance ceiling;
-- run 100, 500, 1000 and 10000 as isolated PostgreSQL matrix jobs so one tier cannot contaminate another;
-- keep the 10,000-person gate free of Granite/Nomic calls and O(N²) relationship seeding.
+- add a dedicated rendering package for pure isometric projection, direction/frame lookup and Sprite Forge manifest validation;
+- keep logical world coordinates orthogonal `(x, y, z)`; isometric projection exists only in rendering code;
+- add a minimal `apps/client` browser app using PixiJS for world sprites and ordinary DOM/React only for UI chrome;
+- consume the generated Sprite Forge fixture atlas/manifest rather than hand-maintained spritesheets;
+- render one mannequin and one chair at deterministic logical coordinates with correct ground anchors;
+- sort sprites by a stable isometric depth key rather than insertion order;
+- demonstrate switching the mannequin through all eight generated directions without changing persistent world identity;
+- keep atlas/frame selection data-driven from the manifest;
+- add unit tests for projection, anchor application, frame lookup, depth ordering and malformed manifest rejection;
+- make CI regenerate the Blender fixture, validate it, then run a renderer contract/build check against that exact generated output;
+- avoid introducing gameplay/world mutation into the client.
 
-Do not claim that this proves 10,000 simultaneous detailed/social/cognitive agents. It proves the intended event-driven dormant/macro population substrate at 10,000 durable people. Higher-LOD density gets separate measured gates later.
-
-After this ladder is green, move to Sprite Forge/PixiJS isometric renderer integration.
+Do not build realtime multiplayer, pathfinding, large maps or character customization in this slice. The gate is only the first deterministic bridge from Sprite Forge artifacts to PixiJS rendering.
