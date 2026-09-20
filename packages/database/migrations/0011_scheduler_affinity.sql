@@ -9,11 +9,50 @@ ALTER TABLE routines
 ALTER TABLE commitments
   ADD COLUMN affinity_keys TEXT[] NOT NULL DEFAULT ARRAY[]::TEXT[];
 
-UPDATE routines
-   SET affinity_keys = ARRAY['entity:' || owner_id];
-
 UPDATE commitments
    SET affinity_keys = ARRAY['entity:' || owner_id];
+
+-- PeriodicRoutine.affinity_keys stores resources in addition to its owner.
+-- createCommitment() adds the owner entity when materializing each occurrence.
+UPDATE routines AS routine
+   SET affinity_keys = ARRAY[
+     'ledger:' || employment.employer_account_id,
+     'ledger:' || employment.employee_account_id
+   ]
+  FROM employments AS employment
+ WHERE employment.world_id = routine.world_id
+   AND employment.work_routine_id = routine.id;
+
+UPDATE routines AS routine
+   SET affinity_keys = ARRAY[
+     'housing:' || tenancy.housing_unit_id,
+     'ledger:' || tenancy.landlord_account_id,
+     'ledger:' || tenancy.tenant_account_id
+   ]
+  FROM tenancies AS tenancy
+ WHERE tenancy.world_id = routine.world_id
+   AND tenancy.rent_routine_id = routine.id;
+
+UPDATE commitments AS commitment
+   SET affinity_keys = ARRAY[
+     'entity:' || commitment.owner_id,
+     'ledger:' || employment.employer_account_id,
+     'ledger:' || employment.employee_account_id
+   ]
+  FROM employments AS employment
+ WHERE employment.world_id = commitment.world_id
+   AND commitment.payload->>'employmentId' = employment.id;
+
+UPDATE commitments AS commitment
+   SET affinity_keys = ARRAY[
+     'entity:' || commitment.owner_id,
+     'housing:' || tenancy.housing_unit_id,
+     'ledger:' || tenancy.landlord_account_id,
+     'ledger:' || tenancy.tenant_account_id
+   ]
+  FROM tenancies AS tenancy
+ WHERE tenancy.world_id = commitment.world_id
+   AND commitment.payload->>'tenancyId' = tenancy.id;
 
 UPDATE scheduled_events AS scheduled
    SET affinity_keys = commitment.affinity_keys
