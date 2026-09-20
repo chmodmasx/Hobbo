@@ -10,6 +10,7 @@ on:
       - 'pnpm-workspace.yaml'
       - 'tsconfig.base.json'
       - 'packages/**'
+      - 'apps/**'
   pull_request:
     paths:
       - '.github/workflows/core-ci.yml'
@@ -17,6 +18,7 @@ on:
       - 'pnpm-workspace.yaml'
       - 'tsconfig.base.json'
       - 'packages/**'
+      - 'apps/**'
 
 permissions:
   contents: read
