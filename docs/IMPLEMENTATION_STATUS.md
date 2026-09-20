@@ -503,6 +503,25 @@ The deterministic/event-driven kernel is proven across body/inventory, work, mis
 - [x] Population Scale CI #22 (`35537166738`) stayed green across the established durable population ladder.
 - [x] Sprite Forge fixture CI #14 (`35537166755`) stayed green; artifact `10613677374` digest `sha256:8bcc03e2a4080debf07cc0574e10e1e4096bea9beacc0c2b5adc4a4816dd3295`.
 
+## Optional bounded World Director gate completed
+
+- [x] `@hobbo/director` defines a small typed proposal surface instead of granting the model direct world mutation authority.
+- [x] The first proposal surface is intentionally narrow: no intervention, or one bounded social-opportunity seed between sampled existing people.
+- [x] Hard budgets cap each review at 16 sampled people, 32 recent causal events and 8 candidate interventions; runtime policy defaults are smaller and the Director is disabled by default.
+- [x] Population observation stays bounded at scale: reviews use a deterministic rotating population window by occurrence instead of repeatedly sampling the same first IDs.
+- [x] Migration `0014_world_director.sql` persists proposals with durable provenance back to the triggering scheduled review and completed cognition run.
+- [x] Proposal persistence enforces one proposal per trigger, one proposal per cognition request and one accepted proposal per effect-event identity.
+- [x] Director inference uses the existing durable cognition executor/provider boundary, so completed decisions replay without another model call after restart.
+- [x] Accepted proposals become ordinary scheduled events; the Director does not write beliefs, memories, positions, balances, relationships or final outcomes directly.
+- [x] The initial opportunity effect only emits an ordinary causal domain event for existing participants; person state remains unchanged by the Director itself.
+- [x] Restart coverage proves a proposal can persist before the triggering review outcome commits, then a fresh runtime reuses that proposal without inference and schedules the exact effect plus next periodic review.
+- [x] Invalid/unavailable cognition fails open with respect to the base simulation: the review records `world_director.review_failed`, schedules the next bounded review and does not block unrelated scheduler work.
+- [x] Disabling the Director consumes any already-pending Director review as `world_director.review_skipped` without inference or future Director work.
+- [x] Repository integration covers rotating bounded summaries plus exact idempotent proposal replay and semantic-conflict rejection.
+- [x] Core simulation CI #304 (`35538992661`) completed green on final head `7b492c2a01dc67db4598f7314c9aca9b6ef0567a`, including typecheck/unit tests, migration + SQL smoke, repository integration, realtime server integration and runtime integration.
+- [x] Model smoke tests #45 (`35538992753`) completed green on the same final head.
+- [x] Population Scale CI #27 (`35538992705`) completed green on the same final head.
+
 ## Next implementation milestones
 
 - [x] Memory storage/retrieval and Nomic embedding integration.
@@ -521,6 +540,6 @@ The deterministic/event-driven kernel is proven across body/inventory, work, mis
 - [x] Sprite Forge/PixiJS isometric renderer integration.
 - [x] Playable human/realtime multiplayer.
 - [x] Larger city systems.
-- [ ] Optional World Director.
+- [x] Optional World Director.
 
-The deterministic, durable social/economic/life simulation, multi-worker affinity, Sprite Forge, trace-inspector, population-scale, playable/realtime and first hierarchical larger-city spatial gates are now met. The next planned phase is the optional non-authoritative World Director.
+The architecture sequence through the optional non-authoritative World Director is now complete. The next planned phase is the first integrated neighborhood vertical slice/playtest, using the existing authoritative systems rather than adding another foundational subsystem.
