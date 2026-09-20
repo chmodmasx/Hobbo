@@ -35,6 +35,27 @@ INSERT INTO cognition_runs (
   'completed'
 );
 
+INSERT INTO cognition_runs (
+  world_id, request_id, actor_id, sim_time, correlation_id,
+  provider_id, model_id, request_hash, request_payload, affordances,
+  sampling_config, schema_config, decision, status
+) VALUES (
+  'world-director-sql-test',
+  'director-cognition-2',
+  '__world_director__',
+  20,
+  'director-review-2',
+  'mock-traceable',
+  'mock-cognitive-model',
+  'fnv1a64:0000000000000002',
+  '{}'::jsonb,
+  '[]'::jsonb,
+  '{}'::jsonb,
+  '{}'::jsonb,
+  '{"affordance_id":"candidate-2","intent":"invalid constraint fixture"}'::jsonb,
+  'completed'
+);
+
 INSERT INTO scheduled_events (
   world_id, id, due_at, ordinal, type, payload, correlation_id
 ) VALUES (
@@ -88,7 +109,7 @@ BEGIN
       'world-director-sql-test',
       'proposal-invalid',
       'director-review-2',
-      'director-cognition-1',
+      'director-cognition-2',
       'candidate',
       'accepted',
       'social_opportunity',
