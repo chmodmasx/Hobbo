@@ -160,7 +160,9 @@ export function materializeRoutineCommitment<TPayload>(
     kind: routine.kind,
     payload: routine.payload,
     correlationId: asCorrelationId(`routine:${encodedRoutine}:${suffix}`),
-    affinityKeys: routine.affinityKeys,
+    ...(routine.affinityKeys === undefined
+      ? {}
+      : { affinityKeys: routine.affinityKeys }),
     routineId: routine.id,
   });
 }
@@ -199,7 +201,9 @@ export function scheduledEventForCommitment<TPayload>(
         : { routineId: String(commitment.routineId) }),
     },
     correlationId: commitment.correlationId,
-    affinityKeys: commitment.affinityKeys,
+    ...(commitment.affinityKeys === undefined
+      ? {}
+      : { affinityKeys: commitment.affinityKeys }),
   };
 }
 
