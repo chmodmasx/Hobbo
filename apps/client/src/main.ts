@@ -64,6 +64,10 @@ interface TopologyResponse {
   }[];
 }
 
+interface SpatialStateResponse {
+  readonly state: WireSpatialState;
+}
+
 function requireElement<T extends HTMLElement>(
   selector: string,
 ): T {
@@ -144,6 +148,34 @@ async function loadTopology(config: ClientConfig): Promise<readonly TopologyRoom
         left.label.localeCompare(right.label) ||
         left.id.localeCompare(right.id),
     );
+}
+
+async function loadAuthoritativeSpatial(
+  config: ClientConfig,
+): Promise<WireSpatialState> {
+  const response = await fetch(
+    apiUrl(
+      config,
+      `/api/worlds/${encodeURIComponent(config.worldId)}/persons/${encodeURIComponent(config.personId)}/spatial`,
+    ),
+    { cache: "no-store" },
+  );
+  if (!response.ok) {
+    throw new Error(
+      `Spatial state request failed: ${response.status} ${response.statusText}`,
+    );
+  }
+  const decoded = (await response.json()) as SpatialStateResponse;
+  if (
+    typeof decoded !== "object" ||
+    decoded === null ||
+    typeof decoded.state !== "object" ||
+    decoded.state === null ||
+    typeof decoded.state.roomId !== "string"
+  ) {
+    throw new Error("Spatial state response is malformed");
+  }
+  return decoded.state;
 }
 
 async function loadManifest(): Promise<SpriteForgeManifest> {
@@ -307,6 +339,7 @@ async function main(): Promise<void> {
   let sessionReady = false;
   let currentRoomId: string | undefined = config.roomId;
   let stopped = false;
+  let reconciliationBusy = false;
 
   function refreshDestinations(): void {
     const previous = travelDestination.value;
@@ -423,6 +456,36 @@ async function main(): Promise<void> {
     }
   }
 
+  async function reconcileAuthoritativeRoom(): Promise<void> {
+    if (stopped || reconciliationBusy) return;
+    reconciliationBusy = true;
+    try {
+      const state = await loadAuthoritativeSpatial(config);
+      if (state.roomId.startsWith("__transit__:")) {
+        status.textContent = `travelling · ${state.roomId.slice("__transit__:".length)}`;
+        setControls(false);
+        return;
+      }
+      if (
+        currentRoomId !== undefined &&
+        state.roomId !== currentRoomId &&
+        socket !== undefined &&
+        socket.readyState === WebSocket.OPEN
+      ) {
+        sessionReady = false;
+        setControls(false);
+        status.textContent =
+          `authoritative room changed · ${currentRoomId} → ${state.roomId}`;
+        socket.close(4000, "authoritative room changed");
+      }
+    } catch {
+      // Realtime transport remains the primary session channel. A transient
+      // read-only reconciliation failure must not invent or mutate local state.
+    } finally {
+      reconciliationBusy = false;
+    }
+  }
+
   function connect(): void {
     if (stopped) return;
     sessionReady = false;
@@ -499,8 +562,13 @@ async function main(): Promise<void> {
     queueMove(delta[0], delta[1]);
   });
 
+  const reconciliationTimer = window.setInterval(() => {
+    void reconcileAuthoritativeRoom();
+  }, 750);
+
   window.addEventListener("beforeunload", () => {
     stopped = true;
+    window.clearInterval(reconciliationTimer);
     socket?.close();
   });
 

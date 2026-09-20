@@ -65,6 +65,8 @@ function json(
 ): void {
   response.statusCode = status;
   response.setHeader("content-type", "application/json; charset=utf-8");
+  response.setHeader("cache-control", "no-store");
+  response.setHeader("access-control-allow-origin", "*");
   response.end(JSON.stringify(body));
 }
 

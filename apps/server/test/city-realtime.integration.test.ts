@@ -170,6 +170,7 @@ describe("authoritative city realtime binding", () => {
         `http://127.0.0.1:${port}/api/worlds/${worldId}/topology`,
       );
       expect(topologyResponse.status).toBe(200);
+      expect(topologyResponse.headers.get("access-control-allow-origin")).toBe("*");
       expect(await topologyResponse.json()).toMatchObject({
         nodes: expect.arrayContaining([
           expect.objectContaining({ id: "room-home", kind: "room" }),
