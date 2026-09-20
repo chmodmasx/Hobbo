@@ -498,6 +498,9 @@ The deterministic/event-driven kernel is proven across body/inventory, work, mis
 - [x] The PixiJS client discovers enabled room destinations from authoritative topology and sends `spatial.travel` through the same player-action channel; it never executes travel locally.
 - [x] Client room reconciliation is read-only: it observes authoritative spatial state and reconnects when the durable room changes, without advancing simulation time.
 - [x] The compact integration fixture proves room → building → street → building → room travel, unreachable routes, reservation contention, blocked local tiles and retry-safe arrival.
+- [x] Model smoke tests #40 (`35537166754`) stayed green on the hardened city head.
+- [x] Population Scale CI #22 (`35537166738`) stayed green across the established durable population ladder.
+- [x] Sprite Forge fixture CI #14 (`35537166755`) stayed green; artifact `10613677374` digest `sha256:8bcc03e2a4080debf07cc0574e10e1e4096bea9beacc0c2b5adc4a4816dd3295`.
 
 ## Next implementation milestones
 
