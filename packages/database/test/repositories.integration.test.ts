@@ -480,6 +480,95 @@ describe("atomic scheduled-event outcomes", () => {
     expect((await events.list(worldId)).map((event) => event.sequence)).toEqual([1n]);
     expect((await worlds.get(worldId))?.currentSimTime).toBe(10n);
   });
+
+  it("commits independent same-frontier outcomes concurrently without serialization aborts", async () => {
+    const worldId = asWorldId("world-concurrent-outcomes");
+    await worlds.create(worldId);
+    await schedules.scheduleMany(worldId, [
+      {
+        id: asScheduledEventId("outcome-a"),
+        dueAt: simTime(10),
+        type: "test.outcome",
+        payload: {},
+        correlationId: asCorrelationId("outcome-a"),
+        affinityKeys: ["entity:alice"],
+      },
+      {
+        id: asScheduledEventId("outcome-b"),
+        dueAt: simTime(10),
+        type: "test.outcome",
+        payload: {},
+        correlationId: asCorrelationId("outcome-b"),
+        affinityKeys: ["entity:bob"],
+      },
+    ]);
+
+    const first = await schedules.claimDue(
+      worldId,
+      simTime(10),
+      "outcome-worker-a",
+      1,
+    );
+    const second = await schedules.claimDue(
+      worldId,
+      simTime(10),
+      "outcome-worker-b",
+      1,
+    );
+    expect(first).toHaveLength(1);
+    expect(second).toHaveLength(1);
+
+    const firstJob = first[0];
+    const secondJob = second[0];
+    if (firstJob === undefined || secondJob === undefined) {
+      throw new Error("Concurrent outcome fixture failed to claim both jobs");
+    }
+
+    await Promise.all([
+      commitScheduledEventOutcome(pool, {
+        worldId,
+        eventId: firstJob.event.id,
+        workerId: "outcome-worker-a",
+        processedAt: simTime(10),
+        domainEvents: [
+          {
+            id: asEventId("outcome-event-a"),
+            worldId,
+            simTime: simTime(10),
+            type: "test.outcome.processed",
+            actorId: asEntityId("alice"),
+            payload: {},
+            correlationId: firstJob.event.correlationId,
+          },
+        ],
+      }),
+      commitScheduledEventOutcome(pool, {
+        worldId,
+        eventId: secondJob.event.id,
+        workerId: "outcome-worker-b",
+        processedAt: simTime(10),
+        domainEvents: [
+          {
+            id: asEventId("outcome-event-b"),
+            worldId,
+            simTime: simTime(10),
+            type: "test.outcome.processed",
+            actorId: asEntityId("bob"),
+            payload: {},
+            correlationId: secondJob.event.correlationId,
+          },
+        ],
+      }),
+    ]);
+
+    const persisted = await events.list(worldId);
+    expect(persisted.map((event) => event.sequence)).toEqual([1n, 2n]);
+    expect(new Set(persisted.map((event) => String(event.id)))).toEqual(
+      new Set(["outcome-event-a", "outcome-event-b"]),
+    );
+    expect((await worlds.get(worldId))?.currentSimTime).toBe(10n);
+    expect(await schedules.loadOutstanding(worldId)).toEqual([]);
+  });
 });
 
 interface ChainPayload {
