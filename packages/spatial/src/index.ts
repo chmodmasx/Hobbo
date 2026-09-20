@@ -39,6 +39,12 @@ export interface MoveActionInput {
   readonly dy: -1 | 0 | 1;
 }
 
+export interface BlockedSpatialTile {
+  readonly x: number;
+  readonly y: number;
+  readonly z: number;
+}
+
 function safeInteger(value: number, label: string): number {
   if (!Number.isSafeInteger(value)) {
     throw new RangeError(`${label} must be a safe integer`);
@@ -126,8 +132,27 @@ export function targetForMove(
 
 export function createMoveActionDefinition(
   bounds: RoomBounds,
+  blockedTiles: readonly BlockedSpatialTile[] = [],
 ): ActionDefinition<SpatialActorState> {
   assertBounds(bounds);
+  const blocked = new Set<string>();
+  for (const tile of blockedTiles) {
+    safeInteger(tile.x, "blocked tile x");
+    safeInteger(tile.y, "blocked tile y");
+    safeInteger(tile.z, "blocked tile z");
+    if (
+      tile.z !== bounds.z ||
+      tile.x < bounds.minX ||
+      tile.x > bounds.maxX ||
+      tile.y < bounds.minY ||
+      tile.y > bounds.maxY
+    ) {
+      throw new RangeError(
+        `Blocked tile ${tile.x},${tile.y},${tile.z} lies outside room bounds`,
+      );
+    }
+    blocked.add(`${tile.x},${tile.y},${tile.z}`);
+  }
 
   return {
     id: SPATIAL_MOVE_ACTION_ID,
@@ -165,6 +190,13 @@ export function createMoveActionDefinition(
           ok: false,
           code: "out_of_bounds",
           message: "Move would leave the current room",
+        };
+      }
+      if (blocked.has(`${targetX},${targetY},${current.z}`)) {
+        return {
+          ok: false,
+          code: "blocked_tile",
+          message: "Move target is blocked in the active room grid",
         };
       }
 

@@ -241,6 +241,32 @@ describe("durable realtime spatial state", () => {
     expect(await events.list(worldId)).toHaveLength(1);
   });
 
+  it("rejects blocked tiles before mutation or event append", async () => {
+    const { worldId, aliceId } = await seed("spatial-blocked-world");
+
+    await expect(
+      spatial.applyPlayerAction({
+        worldId,
+        personId: aliceId,
+        requestId: "blocked-east",
+        actionId: SPATIAL_MOVE_ACTION_ID,
+        input: { dx: 1, dy: 0 },
+        roomBounds,
+        blockedTiles: [{ x: 2, y: 1, z: 0 }],
+      }),
+    ).resolves.toMatchObject({
+      ok: false,
+      code: "blocked_tile",
+    });
+
+    expect(await spatial.get(worldId, aliceId)).toMatchObject({
+      x: 1,
+      y: 1,
+      version: 0n,
+    });
+    expect(await events.list(worldId)).toEqual([]);
+  });
+
   it("serializes concurrent moves for the same person without lost updates", async () => {
     const { worldId, aliceId } = await seed("spatial-concurrent-world");
 

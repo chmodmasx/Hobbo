@@ -32,9 +32,13 @@ const state: SpatialActorState = {
   facing: "S",
 };
 
-function validate(input: unknown, worldState = state) {
+function validate(
+  input: unknown,
+  worldState = state,
+  blockedTiles: readonly { readonly x: number; readonly y: number; readonly z: number }[] = [],
+) {
   const registry = new ActionRegistry<SpatialActorState>();
-  registry.register(createMoveActionDefinition(bounds));
+  registry.register(createMoveActionDefinition(bounds, blockedTiles));
   return registry.validate(
     {
       actionId: SPATIAL_MOVE_ACTION_ID,
@@ -96,6 +100,19 @@ describe("spatial movement action", () => {
     ).toMatchObject({
       ok: false,
       code: "out_of_bounds",
+    });
+  });
+
+  it("rejects movement into a blocked active-area tile", () => {
+    expect(
+      validate(
+        { dx: 1, dy: 0 },
+        state,
+        [{ x: 3, y: 2, z: 0 }],
+      ),
+    ).toMatchObject({
+      ok: false,
+      code: "blocked_tile",
     });
   });
 

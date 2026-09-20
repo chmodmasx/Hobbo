@@ -16,6 +16,7 @@ import {
   createMoveActionDefinition,
   isMoveActionInput,
   targetForMove,
+  type BlockedSpatialTile,
   type RoomBounds,
   type SpatialActorState,
   type SpatialDirection,
@@ -72,6 +73,7 @@ export interface ApplyPlayerActionInput {
   readonly actionId: ActionId;
   readonly input: unknown;
   readonly roomBounds: RoomBounds;
+  readonly blockedTiles?: readonly BlockedSpatialTile[];
 }
 
 export type PlayerActionResult =
@@ -325,7 +327,12 @@ export class PostgresSpatialRepository {
         }
 
         const registry = new ActionRegistry<SpatialActorState>();
-        registry.register(createMoveActionDefinition(input.roomBounds));
+        registry.register(
+          createMoveActionDefinition(
+            input.roomBounds,
+            input.blockedTiles ?? [],
+          ),
+        );
         const correlationId = asCorrelationId(`player:${input.requestId}`);
         const validation = registry.validate(
           {

@@ -154,13 +154,30 @@ export function createHobboServer(options: HobboServerOptions): Server {
   const subscriptions = new Map<string, Set<WebSocket>>();
   const wss = new WebSocketServer({ noServer: true });
 
-  async function resolveRoomBounds(
+  async function resolveRoomNavigation(
     worldId: WorldId,
     roomId: string,
-  ): Promise<RoomBounds | undefined> {
+  ): Promise<
+    | {
+        readonly bounds: RoomBounds;
+        readonly blockedTiles: readonly {
+          readonly x: number;
+          readonly y: number;
+          readonly z: number;
+        }[];
+      }
+    | undefined
+  > {
     const configured = roomBounds.get(roomId);
-    if (configured !== undefined) return configured;
-    return (await city.getRoomGrid(worldId, roomId))?.bounds;
+    if (configured !== undefined) {
+      return { bounds: configured, blockedTiles: [] };
+    }
+    const grid = await city.getRoomGrid(worldId, roomId);
+    if (grid === undefined) return undefined;
+    return {
+      bounds: grid.bounds,
+      blockedTiles: grid.blockedTiles,
+    };
   }
 
   function subscribe(socket: WebSocket, session: RealtimeSession): void {
@@ -257,7 +274,10 @@ export function createHobboServer(options: HobboServerOptions): Server {
       if (authoritative.roomId !== session.roomId) {
         unsubscribe(socket, session);
         session.roomId = authoritative.roomId;
-        const rebound = await resolveRoomBounds(session.worldId, session.roomId);
+        const rebound = await resolveRoomNavigation(
+          session.worldId,
+          session.roomId,
+        );
         if (rebound === undefined) {
           throw new DomainInvariantError(
             `Authoritative room has no active-area bounds: ${session.roomId}`,
@@ -306,8 +326,11 @@ export function createHobboServer(options: HobboServerOptions): Server {
         return;
       }
 
-      const bounds = await resolveRoomBounds(session.worldId, session.roomId);
-      if (bounds === undefined) {
+      const navigation = await resolveRoomNavigation(
+        session.worldId,
+        session.roomId,
+      );
+      if (navigation === undefined) {
         throw new DomainInvariantError(
           `Realtime room is not configured: ${session.roomId}`,
         );
@@ -319,7 +342,8 @@ export function createHobboServer(options: HobboServerOptions): Server {
         requestId: message.requestId,
         actionId: asActionId(message.actionId),
         input: message.input,
-        roomBounds: bounds,
+        roomBounds: navigation.bounds,
+        blockedTiles: navigation.blockedTiles,
       });
       send(socket, actionResultMessage(result));
       if (result.ok) {
@@ -347,8 +371,11 @@ export function createHobboServer(options: HobboServerOptions): Server {
         socket.close(1008, "requested room does not match authoritative room");
         return;
       }
-      const bounds = await resolveRoomBounds(parsed.worldId, state.roomId);
-      if (bounds === undefined) {
+      const navigation = await resolveRoomNavigation(
+        parsed.worldId,
+        state.roomId,
+      );
+      if (navigation === undefined) {
         socket.close(1008, "room not configured");
         return;
       }
