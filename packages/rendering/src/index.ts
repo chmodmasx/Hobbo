@@ -235,16 +235,15 @@ export function validateSpriteForgeManifest(
   };
 
   const atlasSource = record(source.atlas, "atlas");
-  const atlasRectValue = atlasRect(atlasSource, "atlas");
   const atlas = {
-    ...atlasRectValue,
+    x: 0,
+    y: 0,
+    width: positiveInteger(atlasSource.width, "atlas.width"),
+    height: positiveInteger(atlasSource.height, "atlas.height"),
     file: nonBlankString(atlasSource.file, "atlas.file"),
     columns: positiveInteger(atlasSource.columns, "atlas.columns"),
     rows: positiveInteger(atlasSource.rows, "atlas.rows"),
   };
-  if (atlas.x !== 0 || atlas.y !== 0) {
-    throw new RangeError("top-level atlas origin must be (0,0)");
-  }
 
   const frameValues = source.frames;
   if (!Array.isArray(frameValues) || frameValues.length === 0) {
