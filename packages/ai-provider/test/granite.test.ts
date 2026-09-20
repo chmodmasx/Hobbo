@@ -209,6 +209,58 @@ describe("GraniteCognitiveProvider", () => {
     });
   });
 
+  it("supports dialogue mode with an utterance-oriented prompt and wider schema", async () => {
+    let capturedBody: unknown;
+    const provider = new GraniteCognitiveProvider<TestContext>({
+      baseUrl: "http://localhost:8086",
+      modelId: "hobbo-cognition",
+      mode: "dialogue",
+      fetch: async (_url, init) => {
+        capturedBody = JSON.parse(init.body) as unknown;
+        return response(
+          successPayload({
+            affordance_id: "help_friend",
+            intent:
+              "Of course, Bob. You helped me before, so I am happy to return the favor.",
+          }),
+        );
+      },
+    });
+
+    const decision = await provider.decide(request());
+    expect(decision.affordanceId).toBe(helpId);
+    expect(decision.intent).toContain("Bob");
+
+    const body = capturedBody as {
+      readonly max_tokens: number;
+      readonly messages: readonly {
+        readonly role: string;
+        readonly content: string;
+      }[];
+      readonly response_format: {
+        readonly json_schema: {
+          readonly name: string;
+          readonly schema: {
+            readonly properties: {
+              readonly intent: { readonly maxLength: number };
+            };
+          };
+        };
+      };
+    };
+    expect(body.max_tokens).toBe(192);
+    expect(body.response_format.json_schema.name).toBe("hobbo_dialogue_turn");
+    expect(
+      body.response_format.json_schema.schema.properties.intent.maxLength,
+    ).toBe(280);
+    expect(
+      body.messages.find((message) => message.role === "system")?.content,
+    ).toContain("exact in-character spoken utterance");
+    expect(
+      body.messages.find((message) => message.role === "user")?.content,
+    ).toContain("exact spoken utterance in intent");
+  });
+
   it("accepts constrained message content returned directly as an object", async () => {
     const provider = new GraniteCognitiveProvider<TestContext>({
       baseUrl: "http://localhost:8086",
