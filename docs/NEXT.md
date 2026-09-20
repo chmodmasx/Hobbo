@@ -1,17 +1,17 @@
 # Immediate next step
 
-Build sustained LLM-generated dialogue on top of the existing durable conversation substrate.
+Add explicit same-person/entity affinity or equivalent conflict serialization before enabling multi-worker production runtime mode.
 
-The next gate should prove that a conversation runtime can:
+The next gate should prove that multiple durable scheduler workers can:
 
-- assemble dialogue context from durable participants, private beliefs, relationships, recent memories and the active plan without exposing hidden provenance;
-- use mock/replay first so dialogue is deterministic and restart-safe before enabling Granite;
-- persist every generated turn before applying listener effects;
-- validate model output into explicit text/statements rather than letting the model mutate world state directly;
-- resume after a process restart without regenerating or duplicating an already persisted turn;
-- run multi-turn conversations across several agents while preserving private beliefs, rumor lineage, memories and relationship effects;
-- add a Granite-backed smoke path only after the deterministic/replay gate is green.
+- process independent agents concurrently without introducing a global world lock;
+- identify the person/entity resources an event can mutate before executing its handler;
+- serialize simultaneous events that can mutate the same person or other shared authoritative entity;
+- preserve deterministic same-frontier ordering for conflicting work;
+- release/recover affinity ownership after a worker crash or stale scheduler lease;
+- keep physiology, inventory, employment/payroll, housing, social delivery, planning and dialogue side effects idempotent under worker races;
+- produce the same semantic result as the supported sequential runtime on a multi-agent long-running fixture.
 
-The LLM may choose among valid dialogue affordances and generate utterance content, but PostgreSQL state plus deterministic validation remain authoritative.
+Prefer a small explicit affinity/conflict layer over handler-specific ad-hoc locks. Reuse PostgreSQL transaction/advisory-lock primitives where they preserve the existing scheduler crash boundary.
 
-Keep `@hobbo/runtime` as the only scheduled-event execution path. Do not create a separate dialogue simulator.
+Do not claim multi-worker runtime support until a deliberately contended integration gate and crash/requeue gate are both green. Keep the current sequential worker path as the supported default throughout this work.
