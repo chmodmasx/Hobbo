@@ -476,6 +476,8 @@ The deterministic/event-driven kernel is proven across body/inventory, work, mis
 - [x] Unacknowledged client requests retain their original request IDs and are resent unchanged after reconnect; reconciliation authority remains server/PostgreSQL-side.
 - [x] Sprite Forge fixture CI #6 (`35489123959`) stayed green, including generated fixture validation, renderer contract validation and browser build.
 - [x] Population Scale CI #6 (`35489123977`) stayed green across the established durable population ladder.
+- [x] Sprite Forge fixture #6 artifact digest: `sha256:246e26ca7029db33ed07be6c9b85012f055fd4f90df8c56dadd7b487d7741598`.
+- [x] Authentication/account ownership is deliberately outside this first realtime gate; `worldId + personId` session binding is not a production security boundary.
 
 ## Next implementation milestones
 
