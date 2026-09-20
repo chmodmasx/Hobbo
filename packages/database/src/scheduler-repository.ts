@@ -8,7 +8,10 @@ import {
   type SimTime,
   type WorldId,
 } from "@hobbo/domain";
-import type { ScheduledEvent } from "@hobbo/simulation";
+import {
+  canonicalAffinityKeys,
+  type ScheduledEvent,
+} from "@hobbo/simulation";
 import type { Pool, PoolClient, QueryResultRow } from "pg";
 import { toJsonParameter } from "./json.ts";
 import { withTransaction } from "./transaction.ts";
@@ -30,6 +33,7 @@ interface ScheduledEventRow extends QueryResultRow {
   payload: unknown;
   correlation_id: string;
   causation_id: string | null;
+  affinity_keys: string[];
   status: ScheduledEventStatus;
   attempts: number;
   locked_by: string | null;
@@ -56,6 +60,9 @@ function mapScheduledEvent(row: ScheduledEventRow): PersistedScheduledEvent {
     ...(row.causation_id === null
       ? {}
       : { causationId: asEventId(row.causation_id) }),
+    ...(row.affinity_keys.length === 0
+      ? {}
+      : { affinityKeys: canonicalAffinityKeys(row.affinity_keys) }),
   };
 
   return {
@@ -71,7 +78,7 @@ function mapScheduledEvent(row: ScheduledEventRow): PersistedScheduledEvent {
 
 const SCHEDULED_COLUMNS = `
   world_id, id, due_at, ordinal, type, payload, correlation_id,
-  causation_id, status, attempts, locked_by, locked_at
+  causation_id, affinity_keys, status, attempts, locked_by, locked_at
 `;
 
 export async function scheduleEventsInTransaction(
@@ -92,11 +99,12 @@ export async function scheduleEventsInTransaction(
       );
     }
 
+    const affinityKeys = canonicalAffinityKeys(event.affinityKeys);
     const result = await client.query<ScheduledEventRow>(
       `INSERT INTO scheduled_events (
          world_id, id, due_at, ordinal, type, payload,
-         correlation_id, causation_id
-       ) VALUES ($1,$2,$3,$4,$5,$6,$7,$8)
+         correlation_id, causation_id, affinity_keys
+       ) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9)
        RETURNING ${SCHEDULED_COLUMNS}`,
       [
         worldId,
@@ -107,6 +115,7 @@ export async function scheduleEventsInTransaction(
         toJsonParameter(event.payload, `scheduled event ${event.id} payload`),
         event.correlationId,
         event.causationId ?? null,
+        affinityKeys,
       ],
     );
     const row = result.rows[0];
@@ -227,49 +236,97 @@ export class PostgresScheduledEventRepository {
     }
 
     return withTransaction(this.#pool, async (client) => {
-      const result = await client.query<ScheduledEventRow>(
-        `WITH frontier AS (
-           SELECT min(due_at) AS due_at
-             FROM scheduled_events
-            WHERE world_id = $1
-              AND status IN ('pending', 'processing')
-              AND due_at <= $2
-         ), due AS (
-           SELECT scheduled.world_id,
-                  scheduled.id,
-                  scheduled.due_at,
-                  scheduled.ordinal
-             FROM scheduled_events AS scheduled
-             CROSS JOIN frontier
-            WHERE scheduled.world_id = $1
-              AND scheduled.status = 'pending'
-              AND scheduled.due_at = frontier.due_at
-            ORDER BY scheduled.ordinal ASC
-            FOR UPDATE OF scheduled SKIP LOCKED
-            LIMIT $4
-         ), updated AS (
-           UPDATE scheduled_events AS scheduled
-              SET status = 'processing',
-                  attempts = scheduled.attempts + 1,
-                  locked_by = $3,
-                  locked_at = now()
-             FROM due
-            WHERE scheduled.world_id = due.world_id
-              AND scheduled.id = due.id
-           RETURNING scheduled.*
-         )
-         SELECT updated.world_id, updated.id, updated.due_at, updated.ordinal,
-                updated.type, updated.payload, updated.correlation_id,
-                updated.causation_id, updated.status, updated.attempts,
-                updated.locked_by, updated.locked_at
-           FROM updated
-           JOIN due
-             ON due.world_id = updated.world_id
-            AND due.id = updated.id
-          ORDER BY due.ordinal ASC`,
-        [worldId, through.toString(), workerId, limit],
+      // Serialize only the short claim transaction for this world. Handler
+      // execution remains parallel across workers. This makes affinity
+      // selection deterministic and prevents two claimers from observing the
+      // same resource set before either processing lease becomes visible.
+      await client.query(
+        "SELECT pg_advisory_xact_lock(hashtextextended($1, 0))",
+        [`scheduler-claim:${worldId}`],
       );
-      return result.rows.map(mapScheduledEvent);
+
+      const frontierResult = await client.query<{ due_at: string | null }>(
+        `SELECT min(due_at)::text AS due_at
+           FROM scheduled_events
+          WHERE world_id = $1
+            AND status IN ('pending', 'processing')
+            AND due_at <= $2`,
+        [worldId, through.toString()],
+      );
+      const frontierValue = frontierResult.rows[0]?.due_at ?? null;
+      if (frontierValue === null) return [];
+
+      const processing = await client.query<{ affinity_keys: string[] }>(
+        `SELECT affinity_keys
+           FROM scheduled_events
+          WHERE world_id = $1
+            AND status = 'processing'
+            AND due_at = $2
+          ORDER BY ordinal ASC`,
+        [worldId, frontierValue],
+      );
+      const reserved = new Set<string>();
+      for (const row of processing.rows) {
+        for (const key of canonicalAffinityKeys(row.affinity_keys)) {
+          reserved.add(key);
+        }
+      }
+
+      const candidates = await client.query<ScheduledEventRow>(
+        `SELECT ${SCHEDULED_COLUMNS}
+           FROM scheduled_events
+          WHERE world_id = $1
+            AND status = 'pending'
+            AND due_at = $2
+          ORDER BY ordinal ASC
+          FOR UPDATE`,
+        [worldId, frontierValue],
+      );
+
+      const selected: ScheduledEventRow[] = [];
+      for (const row of candidates.rows) {
+        const keys = canonicalAffinityKeys(row.affinity_keys);
+        if (keys.some((key) => reserved.has(key))) continue;
+        selected.push(row);
+        for (const key of keys) reserved.add(key);
+        if (selected.length >= limit) break;
+      }
+      if (selected.length === 0) return [];
+
+      const selectedIds = selected.map((row) => row.id);
+      await client.query(
+        `UPDATE scheduled_events
+            SET status = 'processing',
+                attempts = attempts + 1,
+                locked_by = $3,
+                locked_at = now()
+          WHERE world_id = $1
+            AND id = ANY($2::text[])
+            AND status = 'pending'`,
+        [worldId, selectedIds, workerId],
+      );
+
+      const claimed = await client.query<ScheduledEventRow>(
+        `SELECT ${SCHEDULED_COLUMNS}
+           FROM scheduled_events
+          WHERE world_id = $1
+            AND id = ANY($2::text[])
+          ORDER BY ordinal ASC`,
+        [worldId, selectedIds],
+      );
+      if (
+        claimed.rows.length !== selectedIds.length ||
+        claimed.rows.some(
+          (row) =>
+            row.status !== "processing" ||
+            row.locked_by !== workerId,
+        )
+      ) {
+        throw new DomainInvariantError(
+          "Affinity claim did not acquire every selected scheduled event",
+        );
+      }
+      return claimed.rows.map(mapScheduledEvent);
     }, "read committed");
   }
 
