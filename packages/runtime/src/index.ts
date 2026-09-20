@@ -44,8 +44,18 @@ import {
   SPATIAL_TRAVEL_DEPART_EVENT_TYPE,
   type PersistedScheduledEvent,
   type PersistedTravelIntent,
+  type PersistedWorldDirectorProposal,
   type PlanTravelInput,
 } from "@hobbo/database";
+import {
+  WORLD_DIRECTOR_HARD_MAX_CANDIDATES,
+  WORLD_DIRECTOR_HARD_MAX_PEOPLE,
+  WORLD_DIRECTOR_HARD_MAX_RECENT_EVENTS,
+  buildWorldDirectorAffordances,
+  proposalFromWorldDirectorAffordance,
+  worldDirectorCognitionContext,
+  type WorldDirectorCognitionContext,
+} from "@hobbo/director";
 import {
   DomainInvariantError,
   SIM_DAY,
@@ -2791,12 +2801,495 @@ export class DurableDialogueRuntime {
   }
 }
 
+
+export const WORLD_DIRECTOR_REVIEW_EVENT_TYPE = "world_director.review";
+export const WORLD_DIRECTOR_OPPORTUNITY_EVENT_TYPE =
+  "world_director.opportunity";
+
+export interface WorldDirectorRuntimePolicy {
+  readonly enabled: boolean;
+  readonly period: SimDuration;
+  readonly effectDelay: SimDuration;
+  readonly maxPeople: number;
+  readonly maxRecentEvents: number;
+  readonly maxCandidates: number;
+}
+
+export const DEFAULT_WORLD_DIRECTOR_RUNTIME_POLICY: WorldDirectorRuntimePolicy = {
+  enabled: false,
+  period: SIM_DAY,
+  effectDelay: SIM_HOUR,
+  maxPeople: 8,
+  maxRecentEvents: 16,
+  maxCandidates: 4,
+};
+
+interface WorldDirectorReviewPayload {
+  readonly occurrence: number;
+  readonly anchorDueAt: string;
+}
+
+interface WorldDirectorOpportunityPayload {
+  readonly proposalId: string;
+  readonly participantIds: readonly [string, string];
+}
+
+function validateWorldDirectorRuntimePolicy(
+  input: Partial<WorldDirectorRuntimePolicy>,
+): WorldDirectorRuntimePolicy {
+  const policy: WorldDirectorRuntimePolicy = {
+    ...DEFAULT_WORLD_DIRECTOR_RUNTIME_POLICY,
+    ...input,
+  };
+  if (policy.period < SIM_HOUR) {
+    throw new DomainInvariantError(
+      "World Director period must be at least one simulated hour",
+    );
+  }
+  if (policy.effectDelay <= 0n || policy.effectDelay > policy.period) {
+    throw new DomainInvariantError(
+      "World Director effectDelay must be positive and no greater than period",
+    );
+  }
+  const bounded = (
+    value: number,
+    label: string,
+    maximum: number,
+  ): number => {
+    if (!Number.isSafeInteger(value) || value <= 0 || value > maximum) {
+      throw new DomainInvariantError(
+        `${label} must be a positive safe integer <= ${maximum}`,
+      );
+    }
+    return value;
+  };
+  bounded(
+    policy.maxPeople,
+    "World Director maxPeople",
+    WORLD_DIRECTOR_HARD_MAX_PEOPLE,
+  );
+  bounded(
+    policy.maxRecentEvents,
+    "World Director maxRecentEvents",
+    WORLD_DIRECTOR_HARD_MAX_RECENT_EVENTS,
+  );
+  bounded(
+    policy.maxCandidates,
+    "World Director maxCandidates",
+    WORLD_DIRECTOR_HARD_MAX_CANDIDATES,
+  );
+  return policy;
+}
+
+function worldDirectorReviewEvent(
+  occurrence: number,
+  dueAt: SimTime,
+  anchorDueAt: SimTime = dueAt,
+): ScheduledEvent<WorldDirectorReviewPayload> {
+  if (!Number.isSafeInteger(occurrence) || occurrence <= 0) {
+    throw new DomainInvariantError(
+      "World Director review occurrence must be a positive safe integer",
+    );
+  }
+  return {
+    id: asScheduledEventId(`runtime:director:review-${occurrence}`),
+    dueAt,
+    type: WORLD_DIRECTOR_REVIEW_EVENT_TYPE,
+    payload: {
+      occurrence,
+      anchorDueAt: anchorDueAt.toString(),
+    },
+    correlationId: asCorrelationId(`runtime:director:review-${occurrence}`),
+    affinityKeys: ["world-director"],
+  };
+}
+
+function parseWorldDirectorReview(
+  scheduled: PersistedScheduledEvent,
+): WorldDirectorReviewPayload {
+  const value = scheduled.event.payload;
+  if (typeof value !== "object" || value === null || Array.isArray(value)) {
+    throw new DomainInvariantError(
+      `World Director review ${scheduled.event.id} payload must be an object`,
+    );
+  }
+  const payload = value as Record<string, unknown>;
+  if (
+    typeof payload.occurrence !== "number" ||
+    !Number.isSafeInteger(payload.occurrence) ||
+    payload.occurrence <= 0 ||
+    typeof payload.anchorDueAt !== "string"
+  ) {
+    throw new DomainInvariantError(
+      `World Director review ${scheduled.event.id} payload is malformed`,
+    );
+  }
+  simTime(payload.anchorDueAt);
+  return {
+    occurrence: payload.occurrence,
+    anchorDueAt: payload.anchorDueAt,
+  };
+}
+
+function parseWorldDirectorOpportunity(
+  scheduled: PersistedScheduledEvent,
+): WorldDirectorOpportunityPayload {
+  const value = scheduled.event.payload;
+  if (typeof value !== "object" || value === null || Array.isArray(value)) {
+    throw new DomainInvariantError(
+      `World Director opportunity ${scheduled.event.id} payload must be an object`,
+    );
+  }
+  const payload = value as Record<string, unknown>;
+  if (
+    typeof payload.proposalId !== "string" ||
+    payload.proposalId.trim().length === 0 ||
+    !Array.isArray(payload.participantIds) ||
+    payload.participantIds.length !== 2 ||
+    typeof payload.participantIds[0] !== "string" ||
+    payload.participantIds[0].trim().length === 0 ||
+    typeof payload.participantIds[1] !== "string" ||
+    payload.participantIds[1].trim().length === 0 ||
+    payload.participantIds[0] === payload.participantIds[1]
+  ) {
+    throw new DomainInvariantError(
+      `World Director opportunity ${scheduled.event.id} payload is malformed`,
+    );
+  }
+  return {
+    proposalId: payload.proposalId,
+    participantIds: [
+      payload.participantIds[0],
+      payload.participantIds[1],
+    ],
+  };
+}
+
+function worldDirectorProposalDetails(
+  proposal: PersistedWorldDirectorProposal,
+): {
+  readonly participantIds: readonly [string, string];
+  readonly dueAt: SimTime;
+} {
+  if (
+    proposal.status !== "accepted" ||
+    proposal.kind !== "social_opportunity" ||
+    proposal.effectEventId === undefined ||
+    typeof proposal.payload !== "object" ||
+    proposal.payload === null ||
+    Array.isArray(proposal.payload)
+  ) {
+    throw new DomainInvariantError(
+      `World Director proposal ${proposal.id} is not an accepted social opportunity`,
+    );
+  }
+  const payload = proposal.payload as Record<string, unknown>;
+  if (
+    !Array.isArray(payload.participantIds) ||
+    payload.participantIds.length !== 2 ||
+    typeof payload.participantIds[0] !== "string" ||
+    payload.participantIds[0].trim().length === 0 ||
+    typeof payload.participantIds[1] !== "string" ||
+    payload.participantIds[1].trim().length === 0 ||
+    payload.participantIds[0] === payload.participantIds[1] ||
+    typeof payload.dueAt !== "string"
+  ) {
+    throw new DomainInvariantError(
+      `World Director proposal ${proposal.id} payload is malformed`,
+    );
+  }
+  return {
+    participantIds: [
+      payload.participantIds[0],
+      payload.participantIds[1],
+    ],
+    dueAt: simTime(payload.dueAt),
+  };
+}
+
+function worldDirectorOpportunityEvent(
+  proposal: PersistedWorldDirectorProposal,
+): ScheduledEvent<WorldDirectorOpportunityPayload> {
+  const details = worldDirectorProposalDetails(proposal);
+  if (proposal.effectEventId === undefined) {
+    throw new DomainInvariantError(
+      `World Director proposal ${proposal.id} has no effect event id`,
+    );
+  }
+  return {
+    id: asScheduledEventId(proposal.effectEventId),
+    dueAt: details.dueAt,
+    type: WORLD_DIRECTOR_OPPORTUNITY_EVENT_TYPE,
+    payload: {
+      proposalId: proposal.id,
+      participantIds: details.participantIds,
+    },
+    correlationId: asCorrelationId(`world-director:${proposal.id}`),
+    affinityKeys: details.participantIds.map((id) => entityAffinityKey(id)),
+  };
+}
+
+export class DurableWorldDirectorRuntime {
+  readonly #pool: Pool;
+  readonly #repository: PostgresWorldDirectorRepository;
+  readonly #schedules: PostgresScheduledEventRepository;
+  readonly #people: PostgresPersonRepository;
+  readonly #executor: DurableCognitionExecutor<WorldDirectorCognitionContext>;
+  readonly #policy: WorldDirectorRuntimePolicy;
+
+  constructor(
+    pool: Pool,
+    options: {
+      readonly policy?: Partial<WorldDirectorRuntimePolicy>;
+      readonly provider?: TraceableCognitiveProvider<WorldDirectorCognitionContext>;
+    } = {},
+  ) {
+    this.#pool = pool;
+    this.#repository = new PostgresWorldDirectorRepository(pool);
+    this.#schedules = new PostgresScheduledEventRepository(pool);
+    this.#people = new PostgresPersonRepository(pool);
+    this.#policy = validateWorldDirectorRuntimePolicy(options.policy ?? {});
+    const provider =
+      options.provider ??
+      new DeterministicTraceableCognitiveProvider<WorldDirectorCognitionContext>({
+        id: "world-director-mock-traceable",
+        modelId: "world-director-mock-v1",
+      });
+    this.#executor = new DurableCognitionExecutor(
+      new PostgresCognitionRepository(pool),
+      provider,
+    );
+  }
+
+  get policy(): WorldDirectorRuntimePolicy {
+    return { ...this.#policy };
+  }
+
+  async scheduleInitial(
+    worldId: WorldId,
+    dueAt: SimTime,
+  ): Promise<ScheduledEvent | undefined> {
+    if (!this.#policy.enabled) return undefined;
+    const event = worldDirectorReviewEvent(1, dueAt);
+    await this.#schedules.schedule(worldId, event);
+    return event;
+  }
+
+  async handleReview(
+    context: ScheduledEventHandlerContext,
+  ): Promise<void> {
+    const payload = parseWorldDirectorReview(context.scheduled);
+    const at = context.scheduled.event.dueAt;
+    const anchorDueAt = simTime(payload.anchorDueAt);
+
+    if (!this.#policy.enabled) {
+      await commitScheduledEventOutcome(this.#pool, {
+        worldId: context.worldId,
+        eventId: context.scheduled.event.id,
+        workerId: context.workerId,
+        processedAt: at,
+        domainEvents: [
+          {
+            id: asEventId(
+              `runtime:director-skipped:${context.scheduled.event.id}`,
+            ),
+            worldId: context.worldId,
+            simTime: at,
+            type: "world_director.review_skipped",
+            payload: {
+              occurrence: payload.occurrence,
+              reason: "disabled",
+            },
+            correlationId: context.scheduled.event.correlationId,
+          },
+        ],
+      });
+      return;
+    }
+
+    let proposal = await this.#repository.getByTriggerEvent(
+      context.worldId,
+      String(context.scheduled.event.id),
+    );
+
+    if (proposal === undefined) {
+      const observed = await this.#repository.loadSummary(context.worldId, {
+        maxPeople: this.#policy.maxPeople,
+        maxRecentEvents: this.#policy.maxRecentEvents,
+      });
+      if (observed.currentSimTime > at) {
+        throw new DomainInvariantError(
+          `World Director review ${context.scheduled.event.id} is behind authoritative world time`,
+        );
+      }
+      const summary = {
+        ...observed,
+        currentSimTime: at,
+      };
+      const affordances = buildWorldDirectorAffordances({
+        summary,
+        effectDelay: this.#policy.effectDelay,
+        maxCandidates: this.#policy.maxCandidates,
+      });
+      const requestId = asCognitionRequestId(
+        `world-director:cognition:${context.scheduled.event.id}`,
+      );
+      const decision = await this.#executor.decide(context.worldId, {
+        id: requestId,
+        actorId: asEntityId("__world_director__"),
+        simTime: at,
+        correlationId: context.scheduled.event.correlationId,
+        context: worldDirectorCognitionContext(summary),
+        affordances,
+      });
+      const selected = affordances.find(
+        (affordance) => affordance.id === decision.affordanceId,
+      );
+      if (selected === undefined) {
+        throw new DomainInvariantError(
+          `World Director selected unavailable affordance ${decision.affordanceId}`,
+        );
+      }
+      const draft = proposalFromWorldDirectorAffordance(selected);
+      const proposalId =
+        `world-director:proposal:${context.scheduled.event.id}`;
+      const effectEventId =
+        draft.status === "accepted"
+          ? `runtime:director:opportunity:${context.scheduled.event.id}`
+          : undefined;
+      proposal = await this.#repository.record({
+        worldId: context.worldId,
+        id: proposalId,
+        triggerEventId: String(context.scheduled.event.id),
+        cognitionRequestId: String(requestId),
+        affordanceId: String(decision.affordanceId),
+        proposal: draft,
+        intent: decision.intent,
+        createdAt: at,
+        ...(effectEventId === undefined ? {} : { effectEventId }),
+      });
+    }
+
+    let nextOccurrence = payload.occurrence + 1;
+    let nextAnchor = addSimTime(anchorDueAt, this.#policy.period);
+    while (nextAnchor <= at) {
+      nextAnchor = addSimTime(nextAnchor, this.#policy.period);
+      nextOccurrence += 1;
+    }
+    const scheduledEvents: ScheduledEvent[] = [
+      worldDirectorReviewEvent(nextOccurrence, nextAnchor, nextAnchor),
+    ];
+    if (proposal.status === "accepted") {
+      const effect = worldDirectorOpportunityEvent(proposal);
+      if (effect.dueAt < at) {
+        throw new DomainInvariantError(
+          `World Director proposal ${proposal.id} effect precedes review time`,
+        );
+      }
+      scheduledEvents.push(effect);
+    }
+
+    await commitScheduledEventOutcome(this.#pool, {
+      worldId: context.worldId,
+      eventId: context.scheduled.event.id,
+      workerId: context.workerId,
+      processedAt: at,
+      domainEvents: [
+        {
+          id: asEventId(
+            `runtime:director-reviewed:${context.scheduled.event.id}`,
+          ),
+          worldId: context.worldId,
+          simTime: at,
+          type: "world_director.review_completed",
+          payload: {
+            occurrence: payload.occurrence,
+            proposalId: proposal.id,
+            status: proposal.status,
+            kind: proposal.kind,
+            cognitionRequestId: proposal.cognitionRequestId,
+            affordanceId: proposal.affordanceId,
+            effectEventId: proposal.effectEventId ?? null,
+          },
+          correlationId: context.scheduled.event.correlationId,
+        },
+      ],
+      scheduledEvents,
+    });
+  }
+
+  async handleOpportunity(
+    context: ScheduledEventHandlerContext,
+  ): Promise<void> {
+    const payload = parseWorldDirectorOpportunity(context.scheduled);
+    const proposal = await this.#repository.get(
+      context.worldId,
+      payload.proposalId,
+    );
+    if (proposal === undefined) {
+      throw new DomainInvariantError(
+        `World Director proposal does not exist: ${payload.proposalId}`,
+      );
+    }
+    if (proposal.effectEventId !== String(context.scheduled.event.id)) {
+      throw new DomainInvariantError(
+        `World Director opportunity event does not match proposal ${proposal.id}`,
+      );
+    }
+    const details = worldDirectorProposalDetails(proposal);
+    if (
+      details.participantIds[0] !== payload.participantIds[0] ||
+      details.participantIds[1] !== payload.participantIds[1] ||
+      details.dueAt !== context.scheduled.event.dueAt
+    ) {
+      throw new DomainInvariantError(
+        `World Director opportunity ${context.scheduled.event.id} does not match persisted proposal`,
+      );
+    }
+
+    const participants = await Promise.all(
+      details.participantIds.map((id) =>
+        this.#people.get(context.worldId, asPersonId(id)),
+      ),
+    );
+    const available = participants.every((person) => person !== undefined);
+
+    await commitScheduledEventOutcome(this.#pool, {
+      worldId: context.worldId,
+      eventId: context.scheduled.event.id,
+      workerId: context.workerId,
+      processedAt: context.scheduled.event.dueAt,
+      domainEvents: [
+        {
+          id: asEventId(
+            `runtime:director-opportunity:${proposal.id}`,
+          ),
+          worldId: context.worldId,
+          simTime: context.scheduled.event.dueAt,
+          type: available
+            ? "world.opportunity_available"
+            : "world.opportunity_expired",
+          targetIds: details.participantIds.map((id) => asEntityId(id)),
+          payload: {
+            proposalId: proposal.id,
+            kind: proposal.kind,
+            participantIds: [...details.participantIds],
+          },
+          correlationId: context.scheduled.event.correlationId,
+        },
+      ],
+    });
+  }
+}
+
 export interface CoreWorldRuntimeOptions {
   readonly physiology?: PhysiologyRuntimePolicy;
   readonly social?: Partial<SocialRuntimePolicy>;
   readonly planning?: Partial<PlanningRuntimePolicy>;
   readonly dialogue?: Partial<DialogueRuntimePolicy>;
   readonly dialogueProvider?: TraceableCognitiveProvider<DialogueCognitionContext>;
+  readonly director?: Partial<WorldDirectorRuntimePolicy>;
+  readonly directorProvider?: TraceableCognitiveProvider<WorldDirectorCognitionContext>;
 }
 
 export class CoreWorldRuntime {
@@ -2805,6 +3298,7 @@ export class CoreWorldRuntime {
   readonly social: DurableSocialRuntime;
   readonly planning: DurablePlanningRuntime;
   readonly dialogue: DurableDialogueRuntime;
+  readonly director: DurableWorldDirectorRuntime;
   readonly commitments: DurableCommitmentDispatcher;
   readonly city: PostgresCitySpatialRepository;
   readonly #people: PostgresPersonRepository;
@@ -2839,6 +3333,12 @@ export class CoreWorldRuntime {
         ? {}
         : { provider: options.dialogueProvider }),
     });
+    this.director = new DurableWorldDirectorRuntime(pool, {
+      policy: options.director,
+      ...(options.directorProvider === undefined
+        ? {}
+        : { provider: options.directorProvider }),
+    });
     this.commitments = new DurableCommitmentDispatcher();
     this.city = new PostgresCitySpatialRepository(pool);
     this.#people = new PostgresPersonRepository(pool);
@@ -2866,6 +3366,12 @@ export class CoreWorldRuntime {
     );
     registry.register(DIALOGUE_TURN_EVENT_TYPE, (context) =>
       this.dialogue.handleTurn(context),
+    );
+    registry.register(WORLD_DIRECTOR_REVIEW_EVENT_TYPE, (context) =>
+      this.director.handleReview(context),
+    );
+    registry.register(WORLD_DIRECTOR_OPPORTUNITY_EVENT_TYPE, (context) =>
+      this.director.handleOpportunity(context),
     );
     registry.register(SPATIAL_TRAVEL_DEPART_EVENT_TYPE, async (context) => {
       await this.city.departTravelClaimed({
@@ -2960,6 +3466,13 @@ export class CoreWorldRuntime {
     dueAt: SimTime,
   ): Promise<ScheduledEvent> {
     return this.planning.scheduleInitial(worldId, personId, dueAt);
+  }
+
+  async scheduleInitialDirector(
+    worldId: WorldId,
+    dueAt: SimTime,
+  ): Promise<ScheduledEvent | undefined> {
+    return this.director.scheduleInitial(worldId, dueAt);
   }
 
   async startDialogue(input: {

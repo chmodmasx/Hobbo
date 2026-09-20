@@ -5,7 +5,7 @@ import {
   proposalFromWorldDirectorAffordance,
   worldDirectorCognitionContext,
 } from "../src/index.ts";
-import { asWorldId, simDuration, simTime } from "@hobbo/domain";
+import { simDuration, simTime } from "@hobbo/domain";
 
 const summary = {
   currentSimTime: simTime(100),
@@ -74,6 +74,21 @@ describe("World Director contracts", () => {
         dueAt: "130",
       },
     });
+  });
+
+  it("rejects malformed selected affordance context", () => {
+    expect(() =>
+      proposalFromWorldDirectorAffordance({
+        id: "broken" as never,
+        actionId: "world_director.social_opportunity" as never,
+        label: "Broken",
+        context: {
+          kind: "social_opportunity",
+          participantIds: ["alice", "alice"],
+          dueAt: "160",
+        },
+      }),
+    ).toThrow(/malformed|unsupported/i);
   });
 
   it("enforces hard budgets and bounded serializable context", () => {

@@ -17,6 +17,7 @@
     "@hobbo/cognition": "workspace:*",
     "@hobbo/conversation": "workspace:*",
     "@hobbo/database": "workspace:*",
+    "@hobbo/director": "workspace:*",
     "@hobbo/domain": "workspace:*",
     "@hobbo/planning": "workspace:*",
     "@hobbo/simulation": "workspace:*",

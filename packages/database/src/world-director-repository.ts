@@ -208,6 +208,22 @@ export class PostgresWorldDirectorRepository {
     }, "repeatable read");
   }
 
+  async get(
+    worldId: WorldId,
+    proposalId: string,
+  ): Promise<PersistedWorldDirectorProposal | undefined> {
+    const result = await this.#pool.query<ProposalRow>(
+      `SELECT world_id, id, trigger_event_id, cognition_request_id,
+              affordance_id, status, kind, payload, intent,
+              created_at_sim::text AS created_at_sim, effect_event_id
+         FROM world_director_proposals
+        WHERE world_id = $1 AND id = $2`,
+      [worldId, proposalId],
+    );
+    const row = result.rows[0];
+    return row === undefined ? undefined : mapProposal(row);
+  }
+
   async getByTriggerEvent(
     worldId: WorldId,
     triggerEventId: string,
