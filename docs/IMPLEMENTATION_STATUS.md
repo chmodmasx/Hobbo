@@ -386,11 +386,33 @@
 - [ ] Canonical rig files, reusable animation clips, declarative wearable definitions, palette/mask compiler passes and production atlas packing remain future Sprite Forge slices.
 - [ ] PixiJS runtime consumption/composition has not yet been implemented.
 
+## Read-only admin/trace inspector completed
+
+- [x] `PostgresTraceRepository` is the reusable read-only query boundary; the admin surface contains no SQL and does not mutate simulation state.
+- [x] A person trace is assembled inside one PostgreSQL `REPEATABLE READ` transaction so physiology, events, memories, beliefs, relationships, conversations and cognition provenance come from one consistent snapshot.
+- [x] The trace exposes persisted person/physiology state plus bounded inventory summaries rather than loading arbitrary world state.
+- [x] Recent domain events include stable sequence, simulation time, actor/targets, payload, causation and correlation IDs.
+- [x] Outstanding scheduled events are selected through durable entity affinity keys and include due time, status, attempts and active lease metadata.
+- [x] Private beliefs, recent memories, directional relationships and persisted conversation messages/statements are world/person scoped.
+- [x] Cognition traces expose provider/model, request hash, durable decision/replay availability, token counts, latency and correlation provenance without returning stored prompt payloads or raw model responses by default.
+- [x] All trace sections use validated pagination with a hard per-section limit of 100 and bounded offset.
+- [x] PostgreSQL integration tests prove deterministic ordering, actor/target event inclusion, affinity filtering, two-direction relationship visibility, pagination, missing-person behavior and isolation from a second world.
+- [x] `apps/admin` provides a minimal localhost-only HTTP/UI surface over that repository contract.
+- [x] The admin HTTP contract accepts only `GET`; mutation methods are rejected with `405` before repository access.
+- [x] Core CI now includes `apps/**`, so future admin changes participate in workspace typecheck/unit gates.
+- [x] Core simulation CI run #275 is green end-to-end for the inspector milestone.
+
+### Admin scope boundary
+
+- [x] The inspector is observability tooling, not an authoritative simulation service.
+- [x] It cannot complete jobs, requeue leases, mutate beliefs/memories or invoke Granite/Nomic.
+- [ ] Rich filtering, causal graph visualization and realtime streaming can be added later without changing the read-only repository boundary.
+
 ### Current CI gate
 
-- [x] TypeScript typecheck green across the 15-project workspace, including `@hobbo/runtime` and `@hobbo/planning`.
-- [x] 115/115 non-integration tests green across 22 files, including deterministic planning and Granite dialogue-mode contracts.
-- [x] 74/74 PostgreSQL database integration tests green across 19 files on PostgreSQL 17, including durable planning, affinity claims and ordered specific deliveries.
+- [x] TypeScript typecheck green across the 16-project workspace, including `@hobbo/runtime`, `@hobbo/planning` and `@hobbo/admin`.
+- [x] 119/119 non-integration tests green across 23 files, including deterministic planning, Granite dialogue-mode contracts and the read-only admin HTTP boundary.
+- [x] 77/77 PostgreSQL database integration tests green across 20 files on PostgreSQL 17, including durable planning, affinity claims, ordered specific deliveries and isolated person traces.
 - [x] 10/10 PostgreSQL runtime integration tests green across 5 files, including integrated-life, social-life, planning, sustained dialogue, cognition replay and multi-worker affinity/crash gates.
 - [x] Database migrations `0001` through `0011` plus all SQL smoke checks green.
 - [x] 20-agent, 30-day durable physiology restart gate green.
@@ -403,7 +425,7 @@
 - [x] Real Nomic embedding smoke passes through `NomicEmbeddingProvider`, not only the raw endpoint request.
 - [x] Sprite Forge CI renders/validates the minimal Blender fixture twice and proves canonical output byte reproducibility.
 
-The deterministic/event-driven kernel is proven across body/inventory, work, missed obligations, salary, housing/rent, commitments, conversations, model-driven utterances, rumor propagation, private beliefs, memories, relationships, long-term goals, conflict-aware plans, reflections, event history, future scheduling and multi-worker resource conflicts with restart-equivalent durable gates. The minimal deterministic Sprite Forge source-to-sprite fixture is also green. The next architecture milestone is the read-only admin/trace inspector so these durable causal traces can be inspected before population scale tests.
+The deterministic/event-driven kernel is proven across body/inventory, work, missed obligations, salary, housing/rent, commitments, conversations, model-driven utterances, rumor propagation, private beliefs, memories, relationships, long-term goals, conflict-aware plans, reflections, event history, future scheduling and multi-worker resource conflicts with restart-equivalent durable gates. The minimal deterministic Sprite Forge source-to-sprite fixture and read-only durable trace inspector are also green. The next architecture milestone is population scaling.
 
 ## Next implementation milestones
 
@@ -418,8 +440,8 @@ The deterministic/event-driven kernel is proven across body/inventory, work, mis
 - [x] Sustained model-generated dialogue using the durable conversation substrate, with real Granite contract smoke.
 - [x] Explicit resource affinity/serialization for multi-worker runtime mode.
 - [x] Minimal Sprite Forge Blender fixture.
-- [ ] Admin/trace inspector over durable simulation/cognition state.
+- [x] Admin/trace inspector over durable simulation/cognition state.
 - [ ] Population scale gates: 100 → 500 → 1000 → 10000 agents.
 - [ ] Sprite Forge/PixiJS isometric renderer integration.
 
-The long-running deterministic, social, planning/reflection, durable dialogue, multi-worker affinity and minimal Sprite Forge reproducibility gates are now met. The next phase focuses on observability and scale before building the playable realtime client.
+The long-running deterministic, social, planning/reflection, durable dialogue, multi-worker affinity, minimal Sprite Forge reproducibility and read-only trace-inspector gates are now met. The next phase is population scaling before Sprite Forge/PixiJS renderer integration.
