@@ -14,6 +14,52 @@ export interface ScheduledEvent<TPayload = unknown> {
   readonly payload: TPayload;
   readonly correlationId: CorrelationId;
   readonly causationId?: EventId;
+  readonly affinityKeys?: readonly string[];
+}
+
+export function canonicalAffinityKeys(
+  values: readonly string[] = [],
+): readonly string[] {
+  const normalized = values.map((value) => {
+    const trimmed = value.trim();
+    if (trimmed.length === 0) {
+      throw new DomainInvariantError("Scheduled-event affinity key cannot be blank");
+    }
+    return trimmed;
+  });
+  const unique = [...new Set(normalized)].sort((left, right) =>
+    left.localeCompare(right)
+  );
+  if (unique.length !== normalized.length) {
+    throw new DomainInvariantError(
+      "Scheduled-event affinity keys cannot contain duplicates",
+    );
+  }
+  return unique;
+}
+
+function affinityPart(value: string): string {
+  const normalized = value.trim();
+  if (normalized.length === 0) {
+    throw new DomainInvariantError("Affinity resource identity cannot be blank");
+  }
+  return encodeURIComponent(normalized);
+}
+
+export function entityAffinityKey(entityId: string): string {
+  return `entity:${affinityPart(entityId)}`;
+}
+
+export function ledgerAffinityKey(accountId: string): string {
+  return `ledger:${affinityPart(accountId)}`;
+}
+
+export function conversationAffinityKey(conversationId: string): string {
+  return `conversation:${affinityPart(conversationId)}`;
+}
+
+export function housingAffinityKey(housingUnitId: string): string {
+  return `housing:${affinityPart(housingUnitId)}`;
 }
 
 interface QueueEntry<TPayload = unknown> extends ScheduledEvent<TPayload> {
@@ -43,6 +89,7 @@ export class ScheduledEventQueue {
   }
 
   schedule<TPayload>(event: ScheduledEvent<TPayload>): void {
+    canonicalAffinityKeys(event.affinityKeys);
     const key = String(event.id);
     if (this.#ids.has(key)) {
       throw new DomainInvariantError(`Scheduled event id already exists: ${key}`);
