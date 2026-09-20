@@ -80,8 +80,8 @@ function requireElement<T extends HTMLElement>(
 
 function clientConfig(): ClientConfig {
   const params = new URLSearchParams(window.location.search);
-  const worldId = params.get("worldId") ?? "playable-world";
-  const personId = params.get("personId") ?? "player-alice";
+  const worldId = params.get("worldId") ?? "integrated-neighborhood-v1";
+  const personId = params.get("personId") ?? "resident-alex";
   const roomId = params.get("roomId") ?? undefined;
   const explicit = params.get("server");
 
