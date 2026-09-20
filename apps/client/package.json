@@ -9,7 +9,9 @@
     "typecheck": "tsc -p tsconfig.json"
   },
   "dependencies": {
+    "@hobbo/realtime": "workspace:*",
     "@hobbo/rendering": "workspace:*",
+    "@hobbo/spatial": "workspace:*",
     "pixi.js": "8.21.0"
   },
   "devDependencies": {

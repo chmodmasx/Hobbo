@@ -27,10 +27,12 @@ body {
   border-bottom: 1px solid #303845;
 }
 
-.toolbar > div {
+.identity,
+.session {
   display: flex;
   align-items: center;
   gap: 0.8rem;
+  flex-wrap: wrap;
 }
 
 #status {
@@ -38,21 +40,12 @@ body {
   font-size: 0.9rem;
 }
 
-.controls {
-  flex-wrap: wrap;
-}
-
-button {
-  border: 1px solid #4a5667;
-  border-radius: 0.35rem;
-  background: #273141;
-  color: inherit;
-  padding: 0.45rem 0.75rem;
-  cursor: pointer;
-}
-
-button:hover {
-  background: #334155;
+.play-area {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  gap: 1rem;
+  padding: 1rem;
+  align-items: start;
 }
 
 .world {
@@ -70,4 +63,70 @@ button:hover {
   background:
     linear-gradient(30deg, rgba(255, 255, 255, 0.025) 12%, transparent 12.5%, transparent 87%, rgba(255, 255, 255, 0.025) 87.5%, rgba(255, 255, 255, 0.025)),
     #171d25;
+}
+
+.movement-panel {
+  width: 12rem;
+  display: grid;
+  gap: 0.75rem;
+  padding: 1rem;
+  background: #1a2029;
+  border: 1px solid #303845;
+  border-radius: 0.5rem;
+}
+
+.movement-panel small {
+  color: #96a0ad;
+  line-height: 1.4;
+}
+
+.dpad {
+  display: grid;
+  grid-template-columns: repeat(3, 3rem);
+  grid-template-rows: repeat(3, 3rem);
+  gap: 0.3rem;
+  justify-content: center;
+}
+
+.dpad button,
+.dpad-center {
+  display: grid;
+  place-items: center;
+}
+
+button {
+  border: 1px solid #4a5667;
+  border-radius: 0.35rem;
+  background: #273141;
+  color: inherit;
+  font: inherit;
+  cursor: pointer;
+}
+
+button:hover:not(:disabled) {
+  background: #334155;
+}
+
+button:disabled {
+  opacity: 0.45;
+  cursor: default;
+}
+
+.dpad-center {
+  color: #657184;
+}
+
+@media (max-width: 900px) {
+  .toolbar {
+    align-items: flex-start;
+    flex-direction: column;
+  }
+
+  .play-area {
+    grid-template-columns: 1fr;
+  }
+
+  .movement-panel {
+    width: auto;
+  }
 }
