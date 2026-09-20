@@ -513,6 +513,7 @@ The deterministic/event-driven kernel is proven across body/inventory, work, mis
 - [x] Population scale gates: 100 → 500 → 1000 → 10000 durable dormant/macro agents.
 - [x] Sprite Forge/PixiJS isometric renderer integration.
 - [x] Playable human/realtime multiplayer.
-- [x] Larger city systems.\n- [ ] Optional World Director.
+- [x] Larger city systems.
+- [ ] Optional World Director.
 
 The deterministic, durable social/economic/life simulation, multi-worker affinity, Sprite Forge, trace-inspector, population-scale, playable/realtime and first hierarchical larger-city spatial gates are now met. The next planned phase is the optional non-authoritative World Director.
