@@ -653,7 +653,7 @@ export const DEFAULT_SOCIAL_RUNTIME_POLICY: SocialRuntimePolicy = {
 
 interface SocialOpportunityPayload {
   readonly personId: string;
-  readonly listenerId: string;
+  readonly listenerId?: string;
   readonly occurrence: number;
   readonly anchorDueAt: string;
 }
@@ -735,8 +735,9 @@ function parseSocialOpportunity(
   if (
     typeof payload.personId !== "string" ||
     payload.personId.length === 0 ||
-    typeof payload.listenerId !== "string" ||
-    payload.listenerId.length === 0 ||
+    (payload.listenerId !== undefined &&
+      (typeof payload.listenerId !== "string" ||
+        payload.listenerId.length === 0)) ||
     typeof payload.occurrence !== "number" ||
     !Number.isSafeInteger(payload.occurrence) ||
     payload.occurrence <= 0 ||
@@ -749,7 +750,9 @@ function parseSocialOpportunity(
   simTime(payload.anchorDueAt);
   return {
     personId: payload.personId,
-    listenerId: payload.listenerId,
+    ...(payload.listenerId === undefined
+      ? {}
+      : { listenerId: payload.listenerId as string }),
     occurrence: payload.occurrence,
     anchorDueAt: payload.anchorDueAt,
   };
@@ -895,7 +898,6 @@ export class DurableSocialRuntime {
   ): Promise<void> {
     const payload = parseSocialOpportunity(context.scheduled);
     const personId = asPersonId(payload.personId);
-    const listenerId = asEntityId(payload.listenerId);
     const at = context.scheduled.event.dueAt;
     const anchorDueAt = simTime(payload.anchorDueAt);
     const person = await this.#people.get(context.worldId, personId);
@@ -904,6 +906,52 @@ export class DurableSocialRuntime {
         `Social opportunity targets missing person ${personId}`,
       );
     }
+
+    if (payload.listenerId === undefined) {
+      // Events persisted before scheduler affinity existed only carried the
+      // speaker identity. Upgrade them atomically before any listener state is
+      // touched so the replacement is claimed with both entity resources.
+      const listenerId = await this.#pickListener(
+        context.worldId,
+        personId,
+        payload.occurrence,
+      );
+      const upgraded = socialOpportunityEvent(
+        personId,
+        listenerId,
+        payload.occurrence,
+        at,
+        anchorDueAt,
+        `:affinity-upgrade:${context.scheduled.event.id}`,
+      );
+      await commitScheduledEventOutcome(this.#pool, {
+        worldId: context.worldId,
+        eventId: context.scheduled.event.id,
+        workerId: context.workerId,
+        processedAt: at,
+        domainEvents: [
+          {
+            id: asEventId(
+              `runtime:social-affinity-upgraded:${context.scheduled.event.id}`,
+            ),
+            worldId: context.worldId,
+            simTime: at,
+            type: "social.opportunity_affinity_upgraded",
+            actorId: asEntityId(String(personId)),
+            targetIds: [listenerId],
+            payload: {
+              occurrence: payload.occurrence,
+              replacementEventId: String(upgraded.id),
+            },
+            correlationId: context.scheduled.event.correlationId,
+          },
+        ],
+        scheduledEvents: [upgraded],
+      });
+      return;
+    }
+
+    const listenerId = asEntityId(payload.listenerId);
 
     if (person.person.energy.mode === "sleeping") {
       const wait = timeUntilEnergyAtLeast(
