@@ -375,6 +375,9 @@ export class PostgresCitySpatialRepository {
     validateSpatialTopology(input.nodes, input.connections);
 
     const nodeKinds = new Map(input.nodes.map((node) => [node.id, node.kind] as const));
+    const roomBounds = new Map(
+      (input.rooms ?? []).map((room) => [room.bounds.roomId, room.bounds] as const),
+    );
     for (const room of input.rooms ?? []) {
       if (nodeKinds.get(room.bounds.roomId) !== "room") {
         throw new DomainInvariantError(
@@ -406,6 +409,23 @@ export class PostgresCitySpatialRepository {
       if (nodeKinds.get(resource.roomId) !== "room") {
         throw new DomainInvariantError(
           `Spatial resource ${resource.id} must reference a room node`,
+        );
+      }
+      const bounds = roomBounds.get(resource.roomId);
+      if (bounds === undefined) {
+        throw new DomainInvariantError(
+          `Spatial resource ${resource.id} requires an active-area room grid`,
+        );
+      }
+      if (
+        resource.z !== bounds.z ||
+        resource.x < bounds.minX ||
+        resource.x > bounds.maxX ||
+        resource.y < bounds.minY ||
+        resource.y > bounds.maxY
+      ) {
+        throw new DomainInvariantError(
+          `Spatial resource ${resource.id} lies outside room ${resource.roomId}`,
         );
       }
     }
@@ -825,6 +845,18 @@ export class PostgresCitySpatialRepository {
         );
       }
 
+      const destinationGrid = await client.query<GridRow>(
+        `SELECT room_id, min_x, max_x, min_y, max_y, z
+           FROM spatial_room_grids
+          WHERE world_id = $1 AND room_id = $2`,
+        [input.worldId, input.destinationRoomId],
+      );
+      if (destinationGrid.rows[0] === undefined) {
+        throw new DomainInvariantError(
+          `Travel destination has no active-area grid: ${input.destinationRoomId}`,
+        );
+      }
+
       const route = findShortestSpatialRoute(
         nodes,
         connections,
@@ -1045,6 +1077,32 @@ export class PostgresCitySpatialRepository {
           `Destination room has no active-area grid: ${travelRow.destination_room_id}`,
         );
       }
+      const blocked = await client.query<TileRow>(
+        `SELECT x, y, z
+           FROM spatial_blocked_tiles
+          WHERE world_id = $1 AND room_id = $2`,
+        [input.worldId, travelRow.destination_room_id],
+      );
+      const blockedKeys = new Set(
+        blocked.rows.map((tile) => `${tile.x},${tile.y},${tile.z}`),
+      );
+      let arrivalX: number | undefined;
+      let arrivalY: number | undefined;
+      for (let y = destination.min_y; y <= destination.max_y; y += 1) {
+        for (let x = destination.min_x; x <= destination.max_x; x += 1) {
+          if (!blockedKeys.has(`${x},${y},${destination.z}`)) {
+            arrivalX = x;
+            arrivalY = y;
+            break;
+          }
+        }
+        if (arrivalX !== undefined) break;
+      }
+      if (arrivalX === undefined || arrivalY === undefined) {
+        throw new DomainInvariantError(
+          `Destination room has no free arrival tile: ${travelRow.destination_room_id}`,
+        );
+      }
 
       const spatial = await client.query<SpatialStateRow>(
         `SELECT room_id, x, y, z, facing, updated_at_sim, version
@@ -1077,8 +1135,8 @@ export class PostgresCitySpatialRepository {
           input.worldId,
           travelRow.person_id,
           travelRow.destination_room_id,
-          destination.min_x,
-          destination.min_y,
+          arrivalX,
+          arrivalY,
           destination.z,
           claim.dueAt.toString(),
         ],
@@ -1111,8 +1169,8 @@ export class PostgresCitySpatialRepository {
             travelId: input.travelId,
             originRoomId: travelRow.origin_room_id,
             destinationRoomId: travelRow.destination_room_id,
-            x: destination.min_x,
-            y: destination.min_y,
+            x: arrivalX,
+            y: arrivalY,
             z: destination.z,
           },
           correlationId: claim.correlationId,

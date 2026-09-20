@@ -86,7 +86,7 @@ CREATE TABLE spatial_resources (
   enabled BOOLEAN NOT NULL DEFAULT TRUE,
   PRIMARY KEY (world_id, id),
   FOREIGN KEY (world_id, room_id)
-    REFERENCES spatial_nodes(world_id, id)
+    REFERENCES spatial_room_grids(world_id, room_id)
     ON DELETE CASCADE
 );
 
