@@ -16,3 +16,4 @@ export * from "./person-repository.ts";
 export * from "./planning-repository.ts";
 export * from "./trace-repository.ts";
 export * from "./spatial-repository.ts";
+export * from "./city-spatial-repository.ts";

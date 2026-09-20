@@ -6,6 +6,7 @@ export interface SpatialTopologyNode {
   readonly id: string;
   readonly kind: SpatialNodeKind;
   readonly parentId?: string;
+  readonly enabled?: boolean;
 }
 
 export interface SpatialTopologyConnection {
@@ -126,7 +127,9 @@ export function findShortestSpatialRoute(
   nonBlank(startNodeId, "startNodeId");
   nonBlank(destinationNodeId, "destinationNodeId");
 
-  const nodeIds = new Set(nodes.map((node) => node.id));
+  const nodeIds = new Set(
+    nodes.filter((node) => node.enabled !== false).map((node) => node.id),
+  );
   if (!nodeIds.has(startNodeId)) {
     throw new RangeError(`Unknown route start node: ${startNodeId}`);
   }
@@ -165,7 +168,13 @@ export function findShortestSpatialRoute(
   }
 
   for (const connection of connections) {
-    if (connection.enabled === false) continue;
+    if (
+      connection.enabled === false ||
+      !nodeIds.has(connection.fromNodeId) ||
+      !nodeIds.has(connection.toNodeId)
+    ) {
+      continue;
+    }
     addEdge(
       connection.fromNodeId,
       connection.toNodeId,
