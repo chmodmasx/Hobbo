@@ -247,6 +247,66 @@ describe("durable conversation delivery queue", () => {
     ]);
   });
 
+  it("claims only the requested delivery without bypassing listener order", async () => {
+    const conversation = await createConversation(
+      "delivery-specific",
+      [alice, bob],
+      4,
+    );
+    const firstMessage = await conversations.appendMessage({
+      id: asConversationMessageId("delivery-specific-1"),
+      worldId,
+      conversationId: conversation.id,
+      speakerId: alice,
+      sentAt: simTime(110),
+      text: "first",
+      statements: [],
+    });
+    const secondMessage = await conversations.appendMessage({
+      id: asConversationMessageId("delivery-specific-2"),
+      worldId,
+      conversationId: conversation.id,
+      speakerId: alice,
+      sentAt: simTime(120),
+      text: "second",
+      statements: [],
+    });
+
+    expect(
+      await conversations.claimDelivery(
+        worldId,
+        secondMessage.id,
+        bob,
+        "specific-worker",
+      ),
+    ).toBeUndefined();
+
+    const first = await conversations.claimDelivery(
+      worldId,
+      firstMessage.id,
+      bob,
+      "specific-worker",
+    );
+    expect(first?.messageId).toBe(firstMessage.id);
+    expect(first?.listenerId).toBe(bob);
+
+    await conversations.completeDelivery(
+      worldId,
+      firstMessage.id,
+      bob,
+      "specific-worker",
+    );
+
+    const second = await conversations.claimDelivery(
+      worldId,
+      secondMessage.id,
+      bob,
+      "specific-worker",
+    );
+    expect(second?.messageId).toBe(secondMessage.id);
+    expect(second?.listenerId).toBe(bob);
+  });
+
   it("requeues stale delivery leases for crash recovery", async () => {
     const conversation = await createConversation("delivery-recovery", [alice, bob], 2);
     const message = await conversations.appendMessage({
