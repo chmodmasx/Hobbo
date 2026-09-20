@@ -1930,6 +1930,7 @@ function parseDialogueTurn(
 
 function dialogueTurnEvent(input: {
   readonly conversationId: ConversationId;
+  readonly participantIds: readonly EntityId[];
   readonly turnOrdinal: number;
   readonly firstSpeakerId: EntityId;
   readonly dueAt: SimTime;
@@ -1951,6 +1952,10 @@ function dialogueTurnEvent(input: {
     correlationId: asCorrelationId(
       `runtime:dialogue:${input.conversationId}:turn-${input.turnOrdinal}`,
     ),
+    affinityKeys: [
+      conversationAffinityKey(String(input.conversationId)),
+      ...input.participantIds.map((id) => entityAffinityKey(String(id))),
+    ],
   };
 }
 
@@ -2142,8 +2147,12 @@ export class DurableDialogueRuntime {
       maxTurns: input.maxTurns,
     });
 
+    const participantIds = input.participantIds.map((id) =>
+      asEntityId(String(id))
+    );
     const event = dialogueTurnEvent({
       conversationId: input.conversationId,
+      participantIds,
       turnOrdinal: 1,
       firstSpeakerId: asEntityId(String(input.firstSpeakerId)),
       dueAt: input.startedAt,
@@ -2201,6 +2210,7 @@ export class DurableDialogueRuntime {
         );
         const retry = dialogueTurnEvent({
           conversationId,
+          participantIds: conversation.participantIds,
           turnOrdinal: payload.turnOrdinal,
           firstSpeakerId,
           dueAt: retryAt,
@@ -2621,6 +2631,7 @@ export class DurableDialogueRuntime {
         : [
             dialogueTurnEvent({
               conversationId,
+              participantIds: [pair.speakerId, pair.listenerId],
               turnOrdinal: payload.turnOrdinal + 1,
               firstSpeakerId,
               dueAt: addSimTime(
