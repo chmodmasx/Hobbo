@@ -40,6 +40,7 @@ import {
   PostgresRoutineRepository,
   PostgresScheduledEventRepository,
   PostgresSocialRepository,
+  PostgresWorldDirectorRepository,
   SPATIAL_TRAVEL_ARRIVE_EVENT_TYPE,
   SPATIAL_TRAVEL_DEPART_EVENT_TYPE,
   type PersistedScheduledEvent,
@@ -3334,7 +3335,9 @@ export class CoreWorldRuntime {
         : { provider: options.dialogueProvider }),
     });
     this.director = new DurableWorldDirectorRuntime(pool, {
-      policy: options.director,
+      ...(options.director === undefined
+        ? {}
+        : { policy: options.director }),
       ...(options.directorProvider === undefined
         ? {}
         : { provider: options.directorProvider }),
