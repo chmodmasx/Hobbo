@@ -110,6 +110,7 @@ describe("Granite live dialogue decision contract", () => {
       const provider = new GraniteCognitiveProvider<DialogueCognitionContext>({
         baseUrl,
         modelId,
+        mode: "dialogue",
       });
 
       const run = await provider.decideWithTrace(fixture());
@@ -119,10 +120,20 @@ describe("Granite live dialogue decision contract", () => {
         "dialogue.small-talk",
       ]).toContain(run.decision.affordanceId);
       expect(run.decision.intent.trim().length).toBeGreaterThan(0);
-      expect(run.decision.intent.length).toBeLessThanOrEqual(80);
+      expect(run.decision.intent.length).toBeLessThanOrEqual(280);
       expect(run.trace.providerId).toBe("granite-openai-compatible");
       expect(run.trace.modelId).toBe(modelId);
       expect(run.trace.rawResponse.length).toBeGreaterThan(0);
+      expect(run.trace.schemaConfig).toMatchObject({
+        json_schema: {
+          name: "hobbo_dialogue_turn",
+          schema: {
+            properties: {
+              intent: { maxLength: 280 },
+            },
+          },
+        },
+      });
 
       const payload = JSON.stringify(run.trace.requestPayload);
       expect(payload).toContain('"conversationId":"conversation-alice-bob"');
