@@ -1,20 +1,20 @@
 # Immediate next step
 
-Build the first integrated neighborhood vertical slice and playtest gate.
+Close the first integrated neighborhood vertical slice with a real browser-level playtest.
 
-The architecture sequence is now complete through the optional World Director. The next phase should stop adding foundational subsystems and prove that the existing simulation, city, realtime, rendering and cognition stack works together as one coherent playable experience.
+The canonical neighborhood seed, authoritative server path, restart-safe 12-hour simulation playtest and PixiJS client build are now in place. The remaining gap is to prove the actual browser client can connect to the seeded PostgreSQL world, render authoritative room state, send player actions and survive authoritative room transitions without a test-only client standing in for the browser.
 
-The first vertical-slice gate should:
+The browser-playtest gate should:
 
-- define one compact canonical neighborhood fixture using the existing room/building/street topology, active-area grids, housing, employment and social systems;
-- include one human-controlled resident plus autonomous residents that keep using the same authoritative action/runtime paths;
-- exercise a representative life loop through ordinary systems: move/travel, home, work, needs, social interaction, dialogue/memory and scheduled commitments;
-- keep PostgreSQL as the only durable authority and preserve restart/reconnect/idempotency guarantees throughout the slice;
-- render the neighborhood through the existing PixiJS/Sprite Forge path without introducing a second spatial or gameplay model in the client;
-- expose enough read-only/debug trace context to explain why important NPC actions and World Director opportunities occurred;
-- keep the World Director optional and disabled-by-default; enabling it may introduce bounded opportunities but may not be required for the base slice to function;
-- add a reproducible seed/setup path so the same neighborhood can be recreated locally and in CI without hand-editing database state;
-- add an end-to-end integration/playtest harness that proves the seeded neighborhood survives restart, player reconnect and continued simulation without divergent authoritative state;
-- measure any obvious realtime/runtime bottlenecks encountered by the integrated slice before introducing new infrastructure.
+- launch the canonical `integrated-neighborhood-v1` seed through the documented production repository path;
+- start the normal authoritative server and the normal Vite/PixiJS client entrypoint;
+- use a real browser automation harness against the rendered client rather than substituting a raw WebSocket test client;
+- prove `resident-alex` initially renders in `room-flat-a` from authoritative `room.state`;
+- perform at least one local movement action through the visible client controls and confirm PostgreSQL remains authoritative;
+- plan travel to the Corner Cafe through the visible client UI, advance the authoritative runtime and verify the browser reconciles into `room-cafe`;
+- reconnect/reload the browser after travel and prove it binds to the persisted destination without duplicating the request;
+- verify the generated Sprite Forge atlas/manifest loads in the browser and that rendering still uses logical coordinates plus isometric projection only;
+- surface enough visible/debug state to make failed browser-playtest assertions diagnosable without exposing raw model prompts/responses;
+- keep this gate deterministic and CI-runnable with the same seed and PostgreSQL migrations used locally.
 
-Do not start broad content production, large maps, authentication/account systems, combat, character customization or a new simulation architecture in this gate. The goal is to turn the completed architecture into one small, coherent, inspectable playable neighborhood before expanding breadth.
+Do not add another simulation subsystem, large-map content, authentication, combat or broad production content in this gate. The goal is to close the gap between the already-green server/runtime playtest and the actual playable browser experience.

@@ -522,6 +522,22 @@ The deterministic/event-driven kernel is proven across body/inventory, work, mis
 - [x] Model smoke tests #45 (`35538992753`) completed green on the same final head.
 - [x] Population Scale CI #27 (`35538992705`) completed green on the same final head.
 
+## Integrated neighborhood seed/restart checkpoint completed
+
+- [x] `apps/server/src/neighborhood-fixture.ts` defines one canonical reproducible neighborhood through production repositories instead of hand-edited SQL or a parallel test model.
+- [x] The canonical seed creates one human-controlled resident plus three autonomous residents, durable room/building/street topology, active-area grids/resources, wallets/funding, tenancy, employment, physiology schedules and initial autonomous social/planning work.
+- [x] `pnpm --filter @hobbo/server seed:neighborhood` exposes the same seed path for local use and refuses to overwrite an existing world identity.
+- [x] The production server no longer carries the old in-memory `fixture-room` fallback; room bounds/topology are resolved from PostgreSQL.
+- [x] The PixiJS client now defaults to `integrated-neighborhood-v1 / resident-alex` while retaining query-parameter overrides.
+- [x] The restart playtest travels the player from home to the cafe through the real WebSocket action path, destroys the first pool/runtime/server, reconstructs them, replays the original travel request idempotently and continues the same authoritative world.
+- [x] The 12-hour continuation proves four salary settlements, durable scheduled work remaining, physiology-driven meals, generated social conversations/memories and exactly one durable player travel intent.
+- [x] Core simulation CI #308 (`35542567770`) completed green on canonical-seed head `af784098060bee63f54a03d8c1b67366255ea67b`.
+- [x] Core simulation CI #309 (`35542722633`) completed green on restart-playtest head `c61aa2e8def5bf85644f36fc342f9f37b7fb67fa`, including the new integrated neighborhood server playtest and the full historical runtime regression suite.
+- [x] Core simulation CI #310 (`35542942537`) completed green on final client/defaults head `5357524fe409043d4ae50ab69c2a5e7cbcf4a12d`.
+- [x] Sprite Forge fixture CI #16 (`35542942521`) completed green on the same final head, including deterministic render, fixture contract, renderer contract and client build.
+- [x] Sprite Forge #16 artifact `10615557575` digest: `sha256:5783bd44bc83da84e4fbc46e9e165ca403e84ed307baf9258f6df87133f24841`.
+- [x] This checkpoint deliberately stops short of claiming browser-level playability: CI has validated the client build/renderer contract, but not yet a real automated browser connected to the seeded authoritative world.
+
 ## Next implementation milestones
 
 - [x] Memory storage/retrieval and Nomic embedding integration.
@@ -541,5 +557,7 @@ The deterministic/event-driven kernel is proven across body/inventory, work, mis
 - [x] Playable human/realtime multiplayer.
 - [x] Larger city systems.
 - [x] Optional World Director.
+- [x] Integrated neighborhood seed/restart checkpoint.
+- [ ] Browser-level integrated neighborhood playable validation.
 
-The architecture sequence through the optional non-authoritative World Director is now complete. The next planned phase is the first integrated neighborhood vertical slice/playtest, using the existing authoritative systems rather than adding another foundational subsystem.
+The architecture sequence through the optional non-authoritative World Director and the first canonical neighborhood seed/restart checkpoint are complete. The next planned phase is browser-level validation of that same neighborhood through the actual PixiJS client.
