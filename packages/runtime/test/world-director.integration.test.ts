@@ -159,7 +159,7 @@ describe("durable bounded World Director runtime", () => {
         worldId,
         through: simTime(10),
         workerId: "director-restart-worker",
-        maxEvents: 1,
+        maxEvents: 2,
       }),
     ).toBe(1);
     expect(forbiddenCalls).toBe(0);
@@ -191,7 +191,7 @@ describe("durable bounded World Director runtime", () => {
         worldId,
         through: simTime(70),
         workerId: "director-effect-worker",
-        maxEvents: 1,
+        maxEvents: 2,
       }),
     ).toBe(1);
 
@@ -224,7 +224,7 @@ describe("durable bounded World Director runtime", () => {
         worldId,
         through: simTime(10),
         workerId: "director-invalid-worker",
-        maxEvents: 1,
+        maxEvents: 2,
       }),
     ).toBe(1);
 
@@ -276,7 +276,7 @@ describe("durable bounded World Director runtime", () => {
         worldId,
         through: simTime(5),
         workerId: "director-disabled-worker",
-        maxEvents: 1,
+        maxEvents: 2,
       }),
     ).toBe(1);
     expect(calls).toBe(0);
