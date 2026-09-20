@@ -9,7 +9,9 @@ import {
 import {
   DeterministicTraceableCognitiveProvider,
 } from "@hobbo/ai-provider/granite";
+import { DurableCognitionExecutor } from "@hobbo/cognition";
 import {
+  PostgresCognitionRepository,
   PostgresPersonRepository,
   PostgresScheduledEventRepository,
   PostgresSocialRepository,
@@ -18,7 +20,11 @@ import {
 import {
   SIM_DAY,
   SIM_HOUR,
+  asActionId,
+  asAffordanceId,
+  asCognitionRequestId,
   asConversationId,
+  asCorrelationId,
   asEntityId,
   asLifeGoalId,
   asPersonId,
