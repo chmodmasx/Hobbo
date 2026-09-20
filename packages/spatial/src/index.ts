@@ -175,3 +175,4 @@ export function createMoveActionDefinition(
 
 export * from "./topology.ts";
 export * from "./local-path.ts";
+export * from "./travel-action.ts";

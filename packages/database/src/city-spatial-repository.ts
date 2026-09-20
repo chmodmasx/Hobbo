@@ -1,4 +1,8 @@
 import {
+  ActionRegistry,
+  type ActionOrigin,
+} from "@hobbo/actions";
+import {
   DomainInvariantError,
   asCorrelationId,
   asEntityId,
@@ -15,6 +19,8 @@ import {
   type ScheduledEvent,
 } from "@hobbo/simulation";
 import {
+  SPATIAL_TRAVEL_ACTION_ID,
+  createTravelActionDefinition,
   findShortestSpatialRoute,
   validateSpatialTopology,
   type RoomBounds,
@@ -23,6 +29,7 @@ import {
   type SpatialTile,
   type SpatialTopologyConnection,
   type SpatialTopologyNode,
+  type TravelActionWorldState,
 } from "@hobbo/spatial";
 import type { Pool, PoolClient, QueryResultRow } from "pg";
 import { appendDomainEventsInTransaction } from "./event-repository.ts";
@@ -194,6 +201,7 @@ export interface PlanTravelInput {
   readonly personId: PersonId;
   readonly destinationRoomId: string;
   readonly departAt: SimTime;
+  readonly origin?: ActionOrigin;
 }
 
 export interface ClaimedTravelInput {
@@ -763,23 +771,6 @@ export class PostgresCitySpatialRepository {
         );
       }
 
-      const destination = await client.query<{ kind: string; enabled: boolean }>(
-        `SELECT kind, enabled
-           FROM spatial_nodes
-          WHERE world_id = $1 AND id = $2`,
-        [input.worldId, input.destinationRoomId],
-      );
-      const destinationRow = destination.rows[0];
-      if (
-        destinationRow === undefined ||
-        destinationRow.kind !== "room" ||
-        !destinationRow.enabled
-      ) {
-        throw new DomainInvariantError(
-          `Travel destination is not an enabled room: ${input.destinationRoomId}`,
-        );
-      }
-
       const [nodeRows, connectionRows] = await Promise.all([
         client.query<NodeRow>(
           `SELECT id, kind, parent_id, label, enabled
@@ -797,15 +788,52 @@ export class PostgresCitySpatialRepository {
           [input.worldId],
         ),
       ]);
+      const nodes = nodeRows.rows.map(mapNode);
+      const connections = connectionRows.rows.map(mapConnection);
+      const actionState: TravelActionWorldState = {
+        actor: {
+          personId: String(input.personId),
+          roomId: current.room_id,
+          x: current.x,
+          y: current.y,
+          z: current.z,
+          facing: current.facing,
+        },
+        nodes,
+        connections,
+      };
+      const registry = new ActionRegistry<TravelActionWorldState>();
+      registry.register(createTravelActionDefinition());
+      const validation = registry.validate(
+        {
+          actionId: SPATIAL_TRAVEL_ACTION_ID,
+          actorId: asEntityId(String(input.personId)),
+          origin: input.origin ?? "system",
+          requestedAt: world.currentSimTime,
+          correlationId: asCorrelationId(`travel:${input.travelId}`),
+          input: { destinationRoomId: input.destinationRoomId },
+        },
+        {
+          actorId: asEntityId(String(input.personId)),
+          simTime: world.currentSimTime,
+          worldState: actionState,
+        },
+      );
+      if (!validation.ok) {
+        throw new DomainInvariantError(
+          `Travel action rejected (${validation.code}): ${validation.message}`,
+        );
+      }
+
       const route = findShortestSpatialRoute(
-        nodeRows.rows.map(mapNode),
-        connectionRows.rows.map(mapConnection),
+        nodes,
+        connections,
         current.room_id,
         input.destinationRoomId,
       );
       if (route === undefined) {
         throw new DomainInvariantError(
-          `No spatial route from ${current.room_id} to ${input.destinationRoomId}`,
+          `Travel route disappeared after successful validation: ${current.room_id} -> ${input.destinationRoomId}`,
         );
       }
 
