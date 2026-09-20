@@ -365,6 +365,27 @@
 - [x] Affinity guarantees conflict safety, not fair distribution: one worker may legitimately drain more frontier work than another.
 - [ ] Every future handler that mutates a new shared resource must declare all of that resource's affinity keys before it is considered multi-worker safe.
 
+## Minimal Sprite Forge Blender fixture completed
+
+- [x] Added an executable headless Blender fixture under `tools/sprite-forge/blender/`; CI does not depend on an opaque committed `.blend` binary.
+- [x] The fixture procedurally creates one humanoid mannequin, an explicit wearable/front marker and one chair.
+- [x] The mannequin renders all eight canonical directions: `N, NE, E, SE, S, SW, W, NW`.
+- [x] The chair renders four orientations and carries a generated logical footprint contract.
+- [x] Rendering uses a fixed 96×128 orthographic frame, transparent RGBA output, Workbench flat/material shading and fixed Standard color management on the pinned Ubuntu 24.04 / Blender 4.0.2 CI environment.
+- [x] Every generated frame records stable asset/direction identity, dimensions and a projected ground/foot anchor.
+- [x] The fixture composes a fixed 4×3 atlas and emits deterministic JSON metadata describing frame atlas rectangles and source contracts.
+- [x] The validator checks PNG structure/dimensions/alpha, required directions, anchors, furniture footprint, atlas dimensions and non-collapsed directional output without external Python image dependencies.
+- [x] Blender's raw PNG encoding contained process-dependent bytes even when decoded pixels were stable; the build now canonicalizes RGBA scanlines with fixed filter/compression and strips variable ancillary chunks after atlas composition.
+- [x] CI renders the complete fixture in two independent Blender processes and proves SHA-256 equality for all 12 canonicalized frames, atlas and manifest.
+- [x] Generated images remain ignored build/cache output and are uploaded only as a CI artifact for inspection.
+- [x] Sprite Forge CI run #3 is green end-to-end.
+
+### Sprite Forge scope boundary
+
+- [x] This milestone proves source-to-sprite reproducibility, not final art quality.
+- [ ] Canonical rig files, reusable animation clips, declarative wearable definitions, palette/mask compiler passes and production atlas packing remain future Sprite Forge slices.
+- [ ] PixiJS runtime consumption/composition has not yet been implemented.
+
 ### Current CI gate
 
 - [x] TypeScript typecheck green across the 15-project workspace, including `@hobbo/runtime` and `@hobbo/planning`.
@@ -380,8 +401,9 @@
 - [x] Real Granite cognition smoke passes through `GraniteCognitiveProvider`, not only the raw endpoint request.
 - [x] Real Granite dialogue-mode smoke consumes the production visible dialogue context and affordance contract through pinned llama.cpp.
 - [x] Real Nomic embedding smoke passes through `NomicEmbeddingProvider`, not only the raw endpoint request.
+- [x] Sprite Forge CI renders/validates the minimal Blender fixture twice and proves canonical output byte reproducibility.
 
-The deterministic/event-driven kernel is now proven across body/inventory, work, missed obligations, salary, housing/rent, commitments, conversations, model-driven utterances, rumor propagation, private beliefs, memories, relationships, long-term goals, conflict-aware plans, reflections, event history, future scheduling and multi-worker resource conflicts with restart-equivalent durable gates. The next implementation milestone moves into the deterministic visual build pipeline: the minimal Sprite Forge Blender fixture.
+The deterministic/event-driven kernel is proven across body/inventory, work, missed obligations, salary, housing/rent, commitments, conversations, model-driven utterances, rumor propagation, private beliefs, memories, relationships, long-term goals, conflict-aware plans, reflections, event history, future scheduling and multi-worker resource conflicts with restart-equivalent durable gates. The minimal deterministic Sprite Forge source-to-sprite fixture is also green. The next architecture milestone is the read-only admin/trace inspector so these durable causal traces can be inspected before population scale tests.
 
 ## Next implementation milestones
 
@@ -395,6 +417,9 @@ The deterministic/event-driven kernel is now proven across body/inventory, work,
 - [x] Long-term goals/plans and reflection over multi-day histories.
 - [x] Sustained model-generated dialogue using the durable conversation substrate, with real Granite contract smoke.
 - [x] Explicit resource affinity/serialization for multi-worker runtime mode.
-- [ ] Minimal Sprite Forge Blender fixture.
+- [x] Minimal Sprite Forge Blender fixture.
+- [ ] Admin/trace inspector over durable simulation/cognition state.
+- [ ] Population scale gates: 100 → 500 → 1000 → 10000 agents.
+- [ ] Sprite Forge/PixiJS isometric renderer integration.
 
-The long-running deterministic, social, planning/reflection, durable dialogue and multi-worker affinity gates are now met. Both sequential and contended multi-worker execution are covered for the current production event set; new handler types must extend the affinity contract when they introduce new shared mutable resources.
+The long-running deterministic, social, planning/reflection, durable dialogue, multi-worker affinity and minimal Sprite Forge reproducibility gates are now met. The next phase focuses on observability and scale before building the playable realtime client.
