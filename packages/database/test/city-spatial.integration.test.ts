@@ -336,7 +336,7 @@ describe("durable hierarchical city spatial substrate", () => {
         destinationRoomId: "room-work",
         departAt: simTime(10),
       }),
-    ).rejects.toThrow(/no spatial route/i);
+    ).rejects.toThrow(/unreachable_destination/i);
     expect(await schedules.loadPending(worldId)).toEqual([]);
   });
 });
