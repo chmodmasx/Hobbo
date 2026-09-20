@@ -1,17 +1,20 @@
 # Immediate next step
 
-Add explicit same-person/entity affinity or equivalent conflict serialization before enabling multi-worker production runtime mode.
+Build the minimal deterministic Sprite Forge Blender fixture.
 
-The next gate should prove that multiple durable scheduler workers can:
+The first visual-pipeline gate should:
 
-- process independent agents concurrently without introducing a global world lock;
-- identify the person/entity resources an event can mutate before executing its handler;
-- serialize simultaneous events that can mutate the same person or other shared authoritative entity;
-- preserve deterministic same-frontier ordering for conflicting work;
-- release/recover affinity ownership after a worker crash or stale scheduler lease;
-- keep physiology, inventory, employment/payroll, housing, social delivery, planning and dialogue side effects idempotent under worker races;
-- produce the same semantic result as the supported sequential runtime on a multi-agent long-running fixture.
+- create one canonical humanoid mannequin procedurally in a headless Blender script so CI does not depend on an opaque binary `.blend` fixture;
+- include one simple wearable/front-facing marker so directional rendering and layer intent are visible;
+- render the mannequin in all eight canonical directions: `N, NE, E, SE, S, SW, W, NW`;
+- render one furniture object in at least four orientations;
+- use fixed orthographic camera, resolution, transparency, workbench shading and color-management settings;
+- emit per-frame dimensions, foot/ground anchors and stable asset/direction IDs in generated metadata;
+- generate one small fixed-layout atlas plus JSON metadata;
+- validate PNG dimensions/alpha, directions, anchors, furniture footprint and atlas bounds without treating generated output as source art;
+- render the fixture twice in independent Blender processes in CI and prove byte-for-byte deterministic output for the pinned CI environment;
+- upload one generated fixture set as a CI artifact for inspection.
 
-Prefer a small explicit affinity/conflict layer over handler-specific ad-hoc locks. Reuse PostgreSQL transaction/advisory-lock primitives where they preserve the existing scheduler crash boundary.
+Keep all generated images and atlases under ignored build/cache directories. Source of truth remains reproducible Blender/Python/metadata inputs.
 
-Do not claim multi-worker runtime support until a deliberately contended integration gate and crash/requeue gate are both green. Keep the current sequential worker path as the supported default throughout this work.
+Do not expand into a large asset library, runtime Pixi integration or generative frame production in this slice. The purpose of this gate is to prove the deterministic source-to-sprite build contract first.
