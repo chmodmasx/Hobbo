@@ -480,6 +480,25 @@ The deterministic/event-driven kernel is proven across body/inventory, work, mis
 - [x] Sprite Forge fixture #6 artifact digest: `sha256:246e26ca7029db33ed07be6c9b85012f055fd4f90df8c56dadd7b487d7741598`.
 - [x] Authentication/account ownership is deliberately outside this first realtime gate; `worldId + personId` session binding is not a production security boundary.
 
+## Hierarchical larger-city spatial gate completed
+
+- [x] Migration `0013_city_spatial.sql` adds durable room/building/street nodes, traversable connections, active-area grids, blocked tiles, capacity resources/reservations and travel intents.
+- [x] Global route choice is deterministic and weighted by travel time, with stable tie-breaking and explicit disabled/unreachable topology handling.
+- [x] Equal-cost route tie-breaking uses locale-independent code-unit ordering rather than `localeCompare`, preserving replay across ICU/locale environments.
+- [x] Active rooms use deterministic local tile pathfinding; authoritative `spatial.move` now rejects both out-of-bounds and persisted blocked destination tiles before mutation.
+- [x] Long-distance movement is hierarchical: route planning is global, while travel execution uses durable scheduled departure/arrival events instead of per-person realtime ticks.
+- [x] `spatial.travel` is a shared `ActionRegistry` contract; player, system and future NPC callers enter the same validation path.
+- [x] Travel IDs are durable idempotency identities across reconnect/restart; exact retries return the original planned/travelling/arrived intent rather than scheduling a duplicate trip.
+- [x] Immediate player travel resolves departure from the locked authoritative world time inside the planning transaction, avoiding stale pre-lock realtime timestamps.
+- [x] PostgreSQL and shared travel validation enforce at most one active planned/travelling travel per person; a second travel cannot be persisted while another is active.
+- [x] Departure transitions a person into durable transit state and arrival materializes the first deterministic free tile in the destination active-area grid.
+- [x] Resource reservations serialize concurrent capacity claims under PostgreSQL row locking; duplicate active person/resource reservations are rejected.
+- [x] Runtime restart coverage proves a newly constructed `CoreWorldRuntime` can resume scheduled travel and commit authoritative arrival/history.
+- [x] Realtime sessions resolve the person's room from PostgreSQL, expose read-only topology/spatial endpoints and rebind to the authoritative destination room after travel.
+- [x] The PixiJS client discovers enabled room destinations from authoritative topology and sends `spatial.travel` through the same player-action channel; it never executes travel locally.
+- [x] Client room reconciliation is read-only: it observes authoritative spatial state and reconnects when the durable room changes, without advancing simulation time.
+- [x] The compact integration fixture proves room → building → street → building → room travel, unreachable routes, reservation contention, blocked local tiles and retry-safe arrival.
+
 ## Next implementation milestones
 
 - [x] Memory storage/retrieval and Nomic embedding integration.
@@ -497,6 +516,7 @@ The deterministic/event-driven kernel is proven across body/inventory, work, mis
 - [x] Population scale gates: 100 → 500 → 1000 → 10000 durable dormant/macro agents.
 - [x] Sprite Forge/PixiJS isometric renderer integration.
 - [x] Playable human/realtime multiplayer.
-- [ ] Larger city systems.
+- [x] Larger city systems.
+- [ ] Optional World Director.
 
-The long-running deterministic, social, planning/reflection, durable dialogue, multi-worker affinity, Sprite Forge, read-only trace-inspector, dormant/macro population-scale, isometric renderer and first playable/realtime gates are now met. The next phase is the first hierarchical larger-city spatial slice.
+The deterministic, durable social/economic/life simulation, multi-worker affinity, Sprite Forge, trace-inspector, population-scale, playable/realtime and first hierarchical larger-city spatial gates are now met. The next planned phase is the optional non-authoritative World Director.
