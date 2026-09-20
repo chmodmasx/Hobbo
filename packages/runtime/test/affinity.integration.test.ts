@@ -14,6 +14,7 @@ import {
 import {
   SIM_HOUR,
   asCorrelationId,
+  asEntityId,
   asPersonId,
   asScheduledEventId,
   asWorldId,
@@ -25,6 +26,7 @@ import {
   CoreWorldRuntime,
   DurableScheduledEventWorker,
   ScheduledEventHandlerRegistry,
+  SOCIAL_CONVERSATION_OPPORTUNITY_EVENT_TYPE,
 } from "../src/index.ts";
 
 const pool = new Pool();
@@ -339,6 +341,111 @@ describe("durable scheduler affinity runtime", () => {
     expect(await affinitySnapshot(pool, concurrentWorld)).toEqual(
       await affinitySnapshot(pool, controlWorld),
     );
+  });
+
+  it("upgrades legacy social work before touching an undeclared listener", async () => {
+    const worldId = asWorldId("affinity-legacy-social");
+    const worlds = new PostgresWorldRepository(pool);
+    const people = new PostgresPersonRepository(pool);
+    const schedules = new PostgresScheduledEventRepository(pool);
+    const speaker = personId(0);
+    const listener = personId(1);
+
+    await worlds.create(worldId);
+    await people.create({
+      worldId,
+      person: makePerson(0),
+      at: simTime(0),
+    });
+    await people.create({
+      worldId,
+      person: makePerson(1),
+      at: simTime(0),
+    });
+
+    await schedules.schedule(worldId, {
+      id: asScheduledEventId("legacy-social-opportunity"),
+      dueAt: simTime(0),
+      type: SOCIAL_CONVERSATION_OPPORTUNITY_EVENT_TYPE,
+      payload: {
+        personId: String(speaker),
+        occurrence: 1,
+        anchorDueAt: "0",
+      },
+      correlationId: asCorrelationId("legacy-social-opportunity"),
+      affinityKeys: [`entity:${speaker}`],
+    });
+
+    const processed = await new CoreWorldRuntime(pool).processThrough({
+      worldId,
+      through: simTime(0),
+      workerId: "legacy-social-upgrader",
+      claimLimit: 1,
+    });
+    expect(processed).toBe(2);
+
+    const completed = await pool.query<{
+      id: string;
+      payload: Record<string, unknown>;
+      affinity_keys: string[];
+    }>(
+      `SELECT id, payload, affinity_keys
+         FROM scheduled_events
+        WHERE world_id = $1
+          AND type = $2
+          AND status = 'completed'
+        ORDER BY ordinal`,
+      [worldId, SOCIAL_CONVERSATION_OPPORTUNITY_EVENT_TYPE],
+    );
+    expect(completed.rows).toHaveLength(2);
+    expect(completed.rows[0]?.payload.listenerId).toBeUndefined();
+
+    const upgraded = completed.rows[1];
+    expect(upgraded?.payload.listenerId).toBe(String(listener));
+    expect([...(upgraded?.affinity_keys ?? [])].sort()).toEqual(
+      [
+        `entity:${speaker}`,
+        `entity:${listener}`,
+      ].sort(),
+    );
+
+    const domainEvents = await pool.query<{ type: string }>(
+      `SELECT type
+         FROM domain_events
+        WHERE world_id = $1
+        ORDER BY sequence`,
+      [worldId],
+    );
+    expect(domainEvents.rows.map((row) => row.type)).toEqual([
+      "social.opportunity_affinity_upgraded",
+      "social.conversation_completed",
+    ]);
+
+    const conversationCount = await pool.query<{ count: string }>(
+      "SELECT count(*)::text AS count FROM conversations WHERE world_id = $1",
+      [worldId],
+    );
+    expect(conversationCount.rows[0]?.count).toBe("1");
+
+    const next = await pool.query<{
+      payload: Record<string, unknown>;
+      affinity_keys: string[];
+    }>(
+      `SELECT payload, affinity_keys
+         FROM scheduled_events
+        WHERE world_id = $1
+          AND type = $2
+          AND status = 'pending'`,
+      [worldId, SOCIAL_CONVERSATION_OPPORTUNITY_EVENT_TYPE],
+    );
+    expect(next.rows).toHaveLength(1);
+    expect(typeof next.rows[0]?.payload.listenerId).toBe("string");
+    expect(next.rows[0]?.affinity_keys).toHaveLength(2);
+    expect(
+      next.rows[0]?.affinity_keys.includes(
+        `entity:${asEntityId(String(speaker))}`,
+      ),
+    ).toBe(true);
   });
 
   it("recovers a dead affinity lease and converges to sequential semantics", async () => {
