@@ -2842,6 +2842,11 @@ function validateWorldDirectorRuntimePolicy(
     ...DEFAULT_WORLD_DIRECTOR_RUNTIME_POLICY,
     ...input,
   };
+  if (typeof policy.enabled !== "boolean") {
+    throw new DomainInvariantError(
+      "World Director enabled must be boolean",
+    );
+  }
   if (policy.period < SIM_HOUR) {
     throw new DomainInvariantError(
       "World Director period must be at least one simulated hour",
@@ -3113,10 +3118,27 @@ export class DurableWorldDirectorRuntime {
       String(context.scheduled.event.id),
     );
 
+    if (proposal !== undefined) {
+      const expectedProposalId =
+        `world-director:proposal:${context.scheduled.event.id}`;
+      const expectedCognitionRequestId =
+        `world-director:cognition:${context.scheduled.event.id}`;
+      if (
+        proposal.id !== expectedProposalId ||
+        proposal.cognitionRequestId !== expectedCognitionRequestId ||
+        proposal.createdAt !== at
+      ) {
+        throw new DomainInvariantError(
+          `World Director persisted proposal does not match review ${context.scheduled.event.id}`,
+        );
+      }
+    }
+
     if (proposal === undefined) {
       const observed = await this.#repository.loadSummary(context.worldId, {
         maxPeople: this.#policy.maxPeople,
         maxRecentEvents: this.#policy.maxRecentEvents,
+        sampleOrdinal: payload.occurrence,
       });
       if (observed.currentSimTime > at) {
         throw new DomainInvariantError(

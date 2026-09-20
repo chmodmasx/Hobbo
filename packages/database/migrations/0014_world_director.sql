@@ -15,6 +15,7 @@ CREATE TABLE world_director_proposals (
   created_at TIMESTAMPTZ NOT NULL DEFAULT now(),
   PRIMARY KEY (world_id, id),
   UNIQUE (world_id, trigger_event_id),
+  UNIQUE (world_id, cognition_request_id),
   FOREIGN KEY (world_id, trigger_event_id)
     REFERENCES scheduled_events(world_id, id)
     ON DELETE RESTRICT,
@@ -39,7 +40,8 @@ CREATE TABLE world_director_proposals (
 CREATE INDEX world_director_proposals_time_idx
   ON world_director_proposals (world_id, created_at_sim, id);
 
-CREATE INDEX world_director_proposals_cognition_idx
-  ON world_director_proposals (world_id, cognition_request_id);
+CREATE UNIQUE INDEX world_director_proposals_effect_idx
+  ON world_director_proposals (world_id, effect_event_id)
+  WHERE effect_event_id IS NOT NULL;
 
 COMMIT;

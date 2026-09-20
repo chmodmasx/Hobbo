@@ -130,6 +130,7 @@ export class PostgresWorldDirectorRepository {
     input: {
       readonly maxPeople: number;
       readonly maxRecentEvents: number;
+      readonly sampleOrdinal: number;
     },
   ): Promise<WorldDirectorSummary> {
     const maxPeople = boundedLimit(
@@ -142,6 +143,11 @@ export class PostgresWorldDirectorRepository {
       "World Director maxRecentEvents",
       WORLD_DIRECTOR_HARD_MAX_RECENT_EVENTS,
     );
+    if (!Number.isSafeInteger(input.sampleOrdinal) || input.sampleOrdinal <= 0) {
+      throw new DomainInvariantError(
+        "World Director sampleOrdinal must be a positive safe integer",
+      );
+    }
 
     return withTransaction(this.#pool, async (client) => {
       const worldResult = await client.query<WorldRow>(
@@ -168,14 +174,34 @@ export class PostgresWorldDirectorRepository {
         );
       }
 
-      const peopleResult = await client.query<PersonRow>(
+      const sampleCount = Math.min(maxPeople, populationCount);
+      const sampleOffset =
+        populationCount <= maxPeople || populationCount === 0
+          ? 0
+          : Number(
+              (BigInt(input.sampleOrdinal - 1) * BigInt(maxPeople)) %
+                BigInt(populationCount),
+            );
+      const firstPeople = await client.query<PersonRow>(
         `SELECT id
            FROM persons
           WHERE world_id = $1
           ORDER BY id ASC
-          LIMIT $2`,
-        [worldId, maxPeople],
+          LIMIT $2 OFFSET $3`,
+        [worldId, sampleCount, sampleOffset],
       );
+      const sampledPeople = [...firstPeople.rows];
+      if (sampledPeople.length < sampleCount) {
+        const wrapped = await client.query<PersonRow>(
+          `SELECT id
+             FROM persons
+            WHERE world_id = $1
+            ORDER BY id ASC
+            LIMIT $2`,
+          [worldId, sampleCount - sampledPeople.length],
+        );
+        sampledPeople.push(...wrapped.rows);
+      }
 
       const eventsResult = await client.query<EventRow>(
         `SELECT sequence::text AS sequence,
@@ -193,7 +219,7 @@ export class PostgresWorldDirectorRepository {
       return {
         currentSimTime: simTime(world.current_sim_time),
         populationCount,
-        sampledPersonIds: peopleResult.rows.map((row) => row.id),
+        sampledPersonIds: sampledPeople.map((row) => row.id),
         recentEvents: eventsResult.rows
           .slice()
           .reverse()
