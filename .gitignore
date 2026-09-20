@@ -18,6 +18,7 @@ models/*.gguf
 # Sprite Forge generated artifacts
 assets/generated/
 .cache/sprite-forge/
+apps/client/public/sprite-forge/
 
 # Blender/temp
 *.blend1
