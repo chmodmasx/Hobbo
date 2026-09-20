@@ -459,6 +459,7 @@ The deterministic/event-driven kernel is proven across body/inventory, work, mis
 - [x] Rendering tests cover projection, anchor placement, frame lookup, deterministic depth ordering and malformed manifest rejection.
 - [x] Generated fixture paths are resolved from the repository root rather than the package execution cwd, while absolute override paths remain supported.
 - [x] Sprite Forge fixture CI #5 (`35485539674`) regenerated Blender output twice, validated byte-deterministic fixture output, validated the renderer contract and built the PixiJS client against that exact generated output.
+- [x] Core simulation CI #279 (`35485539672`) remained green after the generated-path fix, including workspace typecheck/unit tests, PostgreSQL repository integration and runtime integration.
 - [x] The uploaded fixture artifact digest is `sha256:cf05827afd7d3f63247ab9e2b120e7f20b897fb924d22f28cddfe32212a11e93`.
 - [x] Presentation remains non-authoritative: the client contains no gameplay/world mutation path.
 
