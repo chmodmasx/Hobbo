@@ -1,20 +1,22 @@
 # Immediate next step
 
-Build the minimal deterministic Sprite Forge Blender fixture.
+Build the first read-only admin/trace inspector over Hobbo's durable simulation state.
 
-The first visual-pipeline gate should:
+This milestone should make the already-proven causal model observable without introducing a second source of truth.
 
-- create one canonical humanoid mannequin procedurally in a headless Blender script so CI does not depend on an opaque binary `.blend` fixture;
-- include one simple wearable/front-facing marker so directional rendering and layer intent are visible;
-- render the mannequin in all eight canonical directions: `N, NE, E, SE, S, SW, W, NW`;
-- render one furniture object in at least four orientations;
-- use fixed orthographic camera, resolution, transparency, workbench shading and color-management settings;
-- emit per-frame dimensions, foot/ground anchors and stable asset/direction IDs in generated metadata;
-- generate one small fixed-layout atlas plus JSON metadata;
-- validate PNG dimensions/alpha, directions, anchors, furniture footprint and atlas bounds without treating generated output as source art;
-- render the fixture twice in independent Blender processes in CI and prove byte-for-byte deterministic output for the pinned CI environment;
-- upload one generated fixture set as a CI artifact for inspection.
+The first inspector slice should:
 
-Keep all generated images and atlases under ignored build/cache directories. Source of truth remains reproducible Blender/Python/metadata inputs.
+- add a reusable read-only trace query layer rather than issuing ad-hoc SQL from UI code;
+- inspect one world/person at a time;
+- expose the current persisted person/body state plus inventory summary;
+- show recent domain events involving the person as actor or target, preserving sequence, sim time, causation and correlation IDs;
+- show outstanding scheduled events that reserve the person through durable affinity keys;
+- show private beliefs, recent memories, directional relationships and recent conversation messages visible in persisted state;
+- show cognition runs for that person with provider/model, replay status/decision and request-hash provenance, without requiring model re-inference;
+- provide bounded pagination/limits so the inspector cannot accidentally dump an entire world;
+- add a minimal local admin surface/API that is strictly read-only;
+- prove through PostgreSQL integration tests that the assembled trace is stable, ordered and world/person isolated.
 
-Do not expand into a large asset library, runtime Pixi integration or generative frame production in this slice. The purpose of this gate is to prove the deterministic source-to-sprite build contract first.
+Keep PostgreSQL authoritative. The inspector must not mutate simulation state, complete jobs, requeue leases or call Granite/Nomic.
+
+Do not build the playable Pixi/React client in this slice. This is observability tooling needed before the 100 → 500 → 1000 → 10000 population scale gates.
