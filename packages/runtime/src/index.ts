@@ -2867,22 +2867,22 @@ export class CoreWorldRuntime {
     registry.register(DIALOGUE_TURN_EVENT_TYPE, (context) =>
       this.dialogue.handleTurn(context),
     );
-    registry.register(SPATIAL_TRAVEL_DEPART_EVENT_TYPE, (context) =>
-      this.city.departTravelClaimed({
+    registry.register(SPATIAL_TRAVEL_DEPART_EVENT_TYPE, async (context) => {
+      await this.city.departTravelClaimed({
         worldId: context.worldId,
         travelId: scheduledTravelId(context.scheduled),
         scheduledEventId: context.scheduled.event.id,
         workerId: context.workerId,
-      }),
-    );
-    registry.register(SPATIAL_TRAVEL_ARRIVE_EVENT_TYPE, (context) =>
-      this.city.arriveTravelClaimed({
+      });
+    });
+    registry.register(SPATIAL_TRAVEL_ARRIVE_EVENT_TYPE, async (context) => {
+      await this.city.arriveTravelClaimed({
         worldId: context.worldId,
         travelId: scheduledTravelId(context.scheduled),
         scheduledEventId: context.scheduled.event.id,
         workerId: context.workerId,
-      }),
-    );
+      });
+    });
 
     this.commitments.register("employment.shift", async (context, due) => {
       const person = await this.#people.get(
