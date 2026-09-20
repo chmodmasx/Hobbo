@@ -669,6 +669,73 @@ export class PostgresConversationRepository {
     }, "read committed");
   }
 
+  async claimDelivery(
+    worldId: WorldId,
+    messageId: ConversationMessageId,
+    listenerId: EntityId,
+    workerId: string,
+  ): Promise<PersistedConversationDelivery | undefined> {
+    if (workerId.trim().length === 0) {
+      throw new DomainInvariantError(
+        "Conversation delivery workerId cannot be blank",
+      );
+    }
+
+    return withTransaction(this.#pool, async (client) => {
+      const result = await client.query<DeliveryRow>(
+        `WITH target AS (
+           SELECT d.world_id, d.message_id, d.listener_id
+             FROM conversation_deliveries AS d
+             JOIN conversation_messages AS m
+               ON m.world_id = d.world_id
+              AND m.id = d.message_id
+            WHERE d.world_id = $1
+              AND d.message_id = $2
+              AND d.listener_id = $3
+              AND d.status = 'pending'
+              AND NOT EXISTS (
+                SELECT 1
+                  FROM conversation_deliveries AS earlier
+                  JOIN conversation_messages AS earlier_message
+                    ON earlier_message.world_id = earlier.world_id
+                   AND earlier_message.id = earlier.message_id
+                 WHERE earlier.world_id = d.world_id
+                   AND earlier.listener_id = d.listener_id
+                   AND earlier.status IN ('pending','processing')
+                   AND (
+                     earlier_message.sent_at,
+                     earlier_message.conversation_id,
+                     earlier_message.ordinal,
+                     earlier_message.id
+                   ) < (
+                     m.sent_at,
+                     m.conversation_id,
+                     m.ordinal,
+                     m.id
+                   )
+              )
+            FOR UPDATE OF d
+         )
+         UPDATE conversation_deliveries AS delivery
+            SET status = 'processing',
+                attempts = delivery.attempts + 1,
+                locked_by = $4,
+                locked_at = now()
+           FROM target
+          WHERE delivery.world_id = target.world_id
+            AND delivery.message_id = target.message_id
+            AND delivery.listener_id = target.listener_id
+        RETURNING delivery.world_id, delivery.message_id,
+                  delivery.listener_id, delivery.status, delivery.attempts,
+                  delivery.locked_by, delivery.locked_at,
+                  delivery.completed_at`,
+        [worldId, messageId, listenerId, workerId],
+      );
+      const row = result.rows[0];
+      return row === undefined ? undefined : mapDelivery(row);
+    }, "read committed");
+  }
+
   async claimPendingDeliveries(
     worldId: WorldId,
     workerId: string,
