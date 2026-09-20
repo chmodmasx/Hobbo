@@ -5,6 +5,7 @@ import {
   type ServerResponse,
 } from "node:http";
 import {
+  PostgresCitySpatialRepository,
   PostgresSpatialRepository,
   PostgresWorldRepository,
   type PersistedSpatialState,
@@ -41,10 +42,16 @@ export interface HobboServerOptions {
   readonly rooms: readonly RoomBounds[];
 }
 
+interface ParsedRealtimeSession {
+  readonly worldId: WorldId;
+  readonly personId: PersonId;
+  readonly requestedRoomId?: string;
+}
+
 interface RealtimeSession {
   readonly worldId: WorldId;
   readonly personId: PersonId;
-  readonly roomId: string;
+  roomId: string;
 }
 
 function json(
@@ -107,7 +114,7 @@ function protocolError(
   };
 }
 
-function parseSession(request: IncomingMessage): RealtimeSession | undefined {
+function parseSession(request: IncomingMessage): ParsedRealtimeSession | undefined {
   const url = new URL(request.url ?? "/", "http://localhost");
   if (url.pathname !== "/realtime") return undefined;
 
@@ -118,28 +125,56 @@ function parseSession(request: IncomingMessage): RealtimeSession | undefined {
     worldId === null ||
     worldId.trim().length === 0 ||
     personId === null ||
-    personId.trim().length === 0 ||
-    roomId === null ||
-    roomId.trim().length === 0
+    personId.trim().length === 0
   ) {
+    return undefined;
+  }
+  if (roomId !== null && roomId.trim().length === 0) {
     return undefined;
   }
 
   return {
     worldId: asWorldId(worldId),
     personId: asPersonId(personId),
-    roomId,
+    ...(roomId === null ? {} : { requestedRoomId: roomId }),
   };
 }
 
 export function createHobboServer(options: HobboServerOptions): Server {
   const spatial = new PostgresSpatialRepository(options.pool);
+  const city = new PostgresCitySpatialRepository(options.pool);
   const worlds = new PostgresWorldRepository(options.pool);
   const roomBounds = new Map(
     options.rooms.map((room) => [room.roomId, room] as const),
   );
   const subscriptions = new Map<string, Set<WebSocket>>();
   const wss = new WebSocketServer({ noServer: true });
+
+  async function resolveRoomBounds(
+    worldId: WorldId,
+    roomId: string,
+  ): Promise<RoomBounds | undefined> {
+    const configured = roomBounds.get(roomId);
+    if (configured !== undefined) return configured;
+    return (await city.getRoomGrid(worldId, roomId))?.bounds;
+  }
+
+  function subscribe(socket: WebSocket, session: RealtimeSession): void {
+    const key = roomKey(session.worldId, session.roomId);
+    let sockets = subscriptions.get(key);
+    if (sockets === undefined) {
+      sockets = new Set<WebSocket>();
+      subscriptions.set(key, sockets);
+    }
+    sockets.add(socket);
+  }
+
+  function unsubscribe(socket: WebSocket, session: RealtimeSession): void {
+    const key = roomKey(session.worldId, session.roomId);
+    const sockets = subscriptions.get(key);
+    sockets?.delete(socket);
+    if (sockets?.size === 0) subscriptions.delete(key);
+  }
 
   async function roomMessage(
     worldId: WorldId,
@@ -203,7 +238,38 @@ export function createHobboServer(options: HobboServerOptions): Server {
     try {
       const message = parseRealtimeClientMessage(raw.toString());
       requestId = message.requestId;
-      const bounds = roomBounds.get(session.roomId);
+
+      const authoritative = await spatial.get(session.worldId, session.personId);
+      if (authoritative === undefined) {
+        throw new DomainInvariantError(
+          `Spatial state does not exist for person ${session.personId}`,
+        );
+      }
+      if (authoritative.roomId.startsWith("__transit__:")) {
+        throw new DomainInvariantError(
+          `Person ${session.personId} is currently in transit`,
+        );
+      }
+      if (authoritative.roomId !== session.roomId) {
+        unsubscribe(socket, session);
+        session.roomId = authoritative.roomId;
+        const rebound = await resolveRoomBounds(session.worldId, session.roomId);
+        if (rebound === undefined) {
+          throw new DomainInvariantError(
+            `Authoritative room has no active-area bounds: ${session.roomId}`,
+          );
+        }
+        subscribe(socket, session);
+        send(socket, {
+          type: "session.ready",
+          worldId: String(session.worldId),
+          personId: String(session.personId),
+          roomId: session.roomId,
+        });
+        send(socket, await roomMessage(session.worldId, session.roomId));
+      }
+
+      const bounds = await resolveRoomBounds(session.worldId, session.roomId);
       if (bounds === undefined) {
         throw new DomainInvariantError(
           `Realtime room is not configured: ${session.roomId}`,
@@ -229,30 +295,35 @@ export function createHobboServer(options: HobboServerOptions): Server {
 
   async function acceptConnection(
     socket: WebSocket,
-    session: RealtimeSession,
+    parsed: ParsedRealtimeSession,
   ): Promise<void> {
     try {
-      const bounds = roomBounds.get(session.roomId);
+      const state = await spatial.get(parsed.worldId, parsed.personId);
+      if (state === undefined || state.roomId.startsWith("__transit__:")) {
+        socket.close(1008, "person is not placed in an active room");
+        return;
+      }
+      if (
+        parsed.requestedRoomId !== undefined &&
+        parsed.requestedRoomId !== state.roomId
+      ) {
+        socket.close(1008, "requested room does not match authoritative room");
+        return;
+      }
+      const bounds = await resolveRoomBounds(parsed.worldId, state.roomId);
       if (bounds === undefined) {
         socket.close(1008, "room not configured");
         return;
       }
-      const state = await spatial.get(session.worldId, session.personId);
-      if (state === undefined || state.roomId !== session.roomId) {
-        socket.close(1008, "person is not placed in room");
-        return;
-      }
 
-      const key = roomKey(session.worldId, session.roomId);
-      let sockets = subscriptions.get(key);
-      if (sockets === undefined) {
-        sockets = new Set<WebSocket>();
-        subscriptions.set(key, sockets);
-      }
-      sockets.add(socket);
+      const session: RealtimeSession = {
+        worldId: parsed.worldId,
+        personId: parsed.personId,
+        roomId: state.roomId,
+      };
+      subscribe(socket, session);
       socket.once("close", () => {
-        sockets?.delete(socket);
-        if (sockets?.size === 0) subscriptions.delete(key);
+        unsubscribe(socket, session);
       });
       socket.on("message", (raw) => {
         void handleMessage(socket, session, raw);
@@ -283,6 +354,48 @@ export function createHobboServer(options: HobboServerOptions): Server {
 
       if (url.pathname === "/health") {
         json(response, 200, { ok: true });
+        return;
+      }
+
+      const topologyMatch = /^\/api\/worlds\/([^/]+)\/topology$/.exec(
+        url.pathname,
+      );
+      if (topologyMatch !== null) {
+        const worldPart = topologyMatch[1];
+        if (worldPart === undefined) {
+          json(response, 400, { error: "invalid_path" });
+          return;
+        }
+        json(
+          response,
+          200,
+          await city.loadTopology(asWorldId(decodeURIComponent(worldPart))),
+        );
+        return;
+      }
+
+      const personSpatialMatch =
+        /^\/api\/worlds\/([^/]+)\/persons\/([^/]+)\/spatial$/.exec(
+          url.pathname,
+        );
+      if (personSpatialMatch !== null) {
+        const worldPart = personSpatialMatch[1];
+        const personPart = personSpatialMatch[2];
+        if (worldPart === undefined || personPart === undefined) {
+          json(response, 400, { error: "invalid_path" });
+          return;
+        }
+        const worldId = asWorldId(decodeURIComponent(worldPart));
+        const personId = asPersonId(decodeURIComponent(personPart));
+        const state = await spatial.get(worldId, personId);
+        if (state === undefined) {
+          json(response, 404, { error: "not_found" });
+          return;
+        }
+        json(response, 200, {
+          worldId: String(worldId),
+          state: wireState(state),
+        });
         return;
       }
 

@@ -1,0 +1,218 @@
+import { once } from "node:events";
+import type { AddressInfo } from "node:net";
+import {
+  createEnergyState,
+  createHungerState,
+  type PersonState,
+} from "@hobbo/agents";
+import {
+  PostgresPersonRepository,
+  PostgresSpatialRepository,
+  PostgresWorldRepository,
+} from "@hobbo/database";
+import {
+  asPersonId,
+  asWorldId,
+  simTime,
+} from "@hobbo/domain";
+import type { RealtimeServerMessage } from "@hobbo/realtime";
+import { CoreWorldRuntime } from "@hobbo/runtime";
+import { Pool } from "pg";
+import { afterAll, beforeEach, describe, expect, it } from "vitest";
+import { WebSocket, type RawData } from "ws";
+import { createHobboServer } from "../src/app.ts";
+
+const pool = new Pool();
+const worlds = new PostgresWorldRepository(pool);
+const people = new PostgresPersonRepository(pool);
+const spatial = new PostgresSpatialRepository(pool);
+
+beforeEach(async () => {
+  await pool.query("TRUNCATE worlds CASCADE");
+});
+
+afterAll(async () => {
+  await pool.end();
+});
+
+function person(id: string): PersonState {
+  return {
+    id: asPersonId(id),
+    hunger: createHungerState(0, simTime(0), 0),
+    energy: createEnergyState(10_000, simTime(0), 0, 0, "awake"),
+    inventory: [],
+    mealsEaten: 0,
+    sleepSessions: 0,
+  };
+}
+
+function nextMessage(
+  socket: WebSocket,
+  predicate: (message: RealtimeServerMessage) => boolean,
+): Promise<RealtimeServerMessage> {
+  return new Promise((resolve, reject) => {
+    const timer = setTimeout(
+      () => reject(new Error("Timed out waiting for realtime message")),
+      5_000,
+    );
+    const handler = (raw: RawData) => {
+      const message = JSON.parse(raw.toString()) as RealtimeServerMessage;
+      if (!predicate(message)) return;
+      clearTimeout(timer);
+      socket.off("message", handler);
+      resolve(message);
+    };
+    socket.on("message", handler);
+  });
+}
+
+async function open(url: string): Promise<WebSocket> {
+  const socket = new WebSocket(url);
+  await once(socket, "open");
+  return socket;
+}
+
+async function close(socket: WebSocket): Promise<void> {
+  if (socket.readyState === WebSocket.CLOSED) return;
+  socket.close();
+  await once(socket, "close");
+}
+
+describe("authoritative city realtime binding", () => {
+  it("binds reconnect to PostgreSQL room state after durable travel", async () => {
+    const worldId = asWorldId("city-realtime-world");
+    const personId = asPersonId("alice");
+    await worlds.create(worldId);
+    await people.create({ worldId, person: person("alice"), at: simTime(0) });
+
+    const runtime = new CoreWorldRuntime(pool);
+    await runtime.city.seedTopology({
+      worldId,
+      nodes: [
+        { id: "building-home", kind: "building", label: "Home" },
+        { id: "room-home", kind: "room", parentId: "building-home", label: "Home room" },
+        { id: "street-main", kind: "street", label: "Main street" },
+        { id: "building-work", kind: "building", label: "Work" },
+        { id: "room-work", kind: "room", parentId: "building-work", label: "Work room" },
+      ],
+      connections: [
+        { id: "home-door", fromNodeId: "room-home", toNodeId: "building-home", travelSeconds: 5, bidirectional: true },
+        { id: "home-street", fromNodeId: "building-home", toNodeId: "street-main", travelSeconds: 20, bidirectional: true },
+        { id: "street-work", fromNodeId: "street-main", toNodeId: "building-work", travelSeconds: 30, bidirectional: true },
+        { id: "work-door", fromNodeId: "building-work", toNodeId: "room-work", travelSeconds: 5, bidirectional: true },
+      ],
+      rooms: [
+        { bounds: { roomId: "room-home", minX: 0, maxX: 4, minY: 0, maxY: 4, z: 0 } },
+        { bounds: { roomId: "room-work", minX: 10, maxX: 14, minY: 10, maxY: 14, z: 1 } },
+      ],
+    });
+    await spatial.place({
+      worldId,
+      personId,
+      roomId: "room-home",
+      x: 1,
+      y: 1,
+      z: 0,
+      facing: "E",
+      at: simTime(0),
+    });
+
+    const server = createHobboServer({ pool, rooms: [] });
+    server.listen(0, "127.0.0.1");
+    await once(server, "listening");
+    const port = (server.address() as AddressInfo).port;
+    const base = `ws://127.0.0.1:${port}/realtime?worldId=${worldId}&personId=alice`;
+
+    let socket = await open(base);
+    try {
+      expect(
+        await nextMessage(
+          socket,
+          (message) => message.type === "session.ready",
+        ),
+      ).toMatchObject({
+        type: "session.ready",
+        roomId: "room-home",
+      });
+
+      const topologyResponse = await fetch(
+        `http://127.0.0.1:${port}/api/worlds/${worldId}/topology`,
+      );
+      expect(topologyResponse.status).toBe(200);
+      expect(await topologyResponse.json()).toMatchObject({
+        nodes: expect.arrayContaining([
+          expect.objectContaining({ id: "room-home", kind: "room" }),
+          expect.objectContaining({ id: "street-main", kind: "street" }),
+          expect.objectContaining({ id: "room-work", kind: "room" }),
+        ]),
+      });
+
+      await runtime.planTravel({
+        worldId,
+        travelId: "realtime-trip",
+        personId,
+        destinationRoomId: "room-work",
+        departAt: simTime(10),
+        origin: "player",
+      });
+      await runtime.processThrough({
+        worldId,
+        through: simTime(70),
+        workerId: "city-realtime-worker",
+      });
+
+      const spatialResponse = await fetch(
+        `http://127.0.0.1:${port}/api/worlds/${worldId}/persons/alice/spatial`,
+      );
+      expect(spatialResponse.status).toBe(200);
+      expect(await spatialResponse.json()).toMatchObject({
+        state: {
+          personId: "alice",
+          roomId: "room-work",
+          x: 10,
+          y: 10,
+          z: 1,
+        },
+      });
+
+      await close(socket);
+      socket = await open(base);
+      expect(
+        await nextMessage(
+          socket,
+          (message) => message.type === "session.ready",
+        ),
+      ).toMatchObject({
+        type: "session.ready",
+        roomId: "room-work",
+      });
+      expect(
+        await nextMessage(
+          socket,
+          (message) =>
+            message.type === "room.state" &&
+            message.roomId === "room-work",
+        ),
+      ).toMatchObject({
+        type: "room.state",
+        roomId: "room-work",
+        people: [
+          expect.objectContaining({
+            personId: "alice",
+            x: 10,
+            y: 10,
+            z: 1,
+          }),
+        ],
+      });
+    } finally {
+      await close(socket);
+      await new Promise<void>((resolve, reject) => {
+        server.close((error) => {
+          if (error === undefined) resolve();
+          else reject(error);
+        });
+      });
+    }
+  });
+});
