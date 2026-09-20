@@ -449,6 +449,19 @@
 
 The deterministic/event-driven kernel is proven across body/inventory, work, missed obligations, salary, housing/rent, commitments, conversations, model-driven utterances, rumor propagation, private beliefs, memories, relationships, long-term goals, conflict-aware plans, reflections, event history, future scheduling and multi-worker resource conflicts with restart-equivalent durable gates. The minimal deterministic Sprite Forge fixture, read-only trace inspector and 100→500→1000→10000 dormant/macro population ladder are also green. The next architecture milestone is Sprite Forge/PixiJS isometric renderer integration.
 
+## Sprite Forge / PixiJS isometric renderer gate completed
+
+- [x] `@hobbo/rendering` owns pure isometric projection, generated-manifest validation, frame lookup, ground-anchor application and deterministic depth ordering.
+- [x] Logical world positions remain orthogonal `(x, y, z)`; projected screen coordinates exist only in rendering code.
+- [x] `apps/client` uses PixiJS for world sprites and consumes the generated Sprite Forge manifest/atlas rather than a hand-maintained spritesheet.
+- [x] The fixture renders a mannequin and chair at deterministic logical coordinates with generated ground anchors.
+- [x] The mannequin can switch through all eight canonical directions without changing world identity.
+- [x] Rendering tests cover projection, anchor placement, frame lookup, deterministic depth ordering and malformed manifest rejection.
+- [x] Generated fixture paths are resolved from the repository root rather than the package execution cwd, while absolute override paths remain supported.
+- [x] Sprite Forge fixture CI #5 (`35485539674`) regenerated Blender output twice, validated byte-deterministic fixture output, validated the renderer contract and built the PixiJS client against that exact generated output.
+- [x] The uploaded fixture artifact digest is `sha256:cf05827afd7d3f63247ab9e2b120e7f20b897fb924d22f28cddfe32212a11e93`.
+- [x] Presentation remains non-authoritative: the client contains no gameplay/world mutation path.
+
 ## Next implementation milestones
 
 - [x] Memory storage/retrieval and Nomic embedding integration.
@@ -464,6 +477,6 @@ The deterministic/event-driven kernel is proven across body/inventory, work, mis
 - [x] Minimal Sprite Forge Blender fixture.
 - [x] Admin/trace inspector over durable simulation/cognition state.
 - [x] Population scale gates: 100 → 500 → 1000 → 10000 durable dormant/macro agents.
-- [ ] Sprite Forge/PixiJS isometric renderer integration.
+- [x] Sprite Forge/PixiJS isometric renderer integration.\n- [ ] Playable human/realtime multiplayer.
 
-The long-running deterministic, social, planning/reflection, durable dialogue, multi-worker affinity, minimal Sprite Forge reproducibility, read-only trace-inspector and dormant/macro population-scale gates are now met. The next phase is Sprite Forge/PixiJS isometric renderer integration.
+The long-running deterministic, social, planning/reflection, durable dialogue, multi-worker affinity, minimal Sprite Forge reproducibility, read-only trace-inspector, dormant/macro population-scale and first isometric renderer gates are now met. The next phase is the first playable human/realtime multiplayer slice.
