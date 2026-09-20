@@ -11,16 +11,7 @@ if (!Number.isSafeInteger(port) || port <= 0 || port > 65_535) {
 
 const server = createHobboServer({
   pool,
-  rooms: [
-    {
-      roomId: "fixture-room",
-      minX: 0,
-      maxX: 7,
-      minY: 0,
-      maxY: 7,
-      z: 0,
-    },
-  ],
+  rooms: [],
 });
 
 server.listen(port, host, () => {
