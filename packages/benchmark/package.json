@@ -7,15 +7,24 @@
     ".": "./src/index.ts"
   },
   "scripts": {
-    "typecheck": "tsc -p tsconfig.json"
+    "typecheck": "tsc -p tsconfig.json",
+    "scale:durable": "tsx src/durable-population-scale.ts"
   },
   "dependencies": {
     "@hobbo/actions": "workspace:*",
     "@hobbo/agents": "workspace:*",
     "@hobbo/conversation": "workspace:*",
+    "@hobbo/database": "workspace:*",
     "@hobbo/domain": "workspace:*",
     "@hobbo/memory": "workspace:*",
+    "@hobbo/runtime": "workspace:*",
     "@hobbo/simulation": "workspace:*",
-    "@hobbo/social": "workspace:*"
+    "@hobbo/social": "workspace:*",
+    "pg": "8.23.0"
+  },
+  "devDependencies": {
+    "@types/node": "^24.0.0",
+    "@types/pg": "8.23.1",
+    "tsx": "^4.20.0"
   }
 }
