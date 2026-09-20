@@ -28,12 +28,13 @@ CI must not:
 
 `ibm-granite/granite-4.1-3b-GGUF`, `Q4_K_M`.
 
-The Granite smoke starts an OpenAI-compatible llama.cpp server and performs two layers of validation:
+The Granite smoke starts an OpenAI-compatible llama.cpp server and performs three layers of validation:
 
 1. a raw `/v1/chat/completions` request verifies the pinned llama.cpp + Granite GGUF combination can satisfy Hobbo's strict JSON-schema decision contract and select `eat_owned_food` in the deterministic hunger fixture;
-2. `packages/ai-provider/test/granite-live.integration.test.ts` calls the production `GraniteCognitiveProvider` against that same live llama.cpp process and real GGUF.
+2. `packages/ai-provider/test/granite-live.integration.test.ts` calls the production `GraniteCognitiveProvider` against that same live llama.cpp process and real GGUF;
+3. `packages/runtime/live-test/dialogue.integration.test.ts` exercises the production provider in `dialogue` mode with the same visible context shape used by the durable dialogue runtime: private beliefs, relationship vector, recent memories, prior visible turns and the active plan.
 
-The production provider builds the `affordance_id` enum only from currently available affordances, sends deterministic sampling settings, validates returned JSON again on the client, rejects invented actions or extra fields, and captures the complete request/response provenance needed for durable replay.
+The production provider builds the `affordance_id` enum only from currently available affordances, sends deterministic sampling settings, validates returned JSON again on the client, rejects invented actions or extra fields, and captures the complete request/response provenance needed for durable replay. In `dialogue` mode the model must still select one supplied affordance, but the `intent` field is explicitly defined as the exact in-character spoken utterance and is schema-bounded to 280 characters. Hidden statement provenance and memory metadata are not included in the dialogue prompt.
 
 The live Granite test permits up to 30 seconds because it runs a quantized 3B model on an uncontrolled shared CPU runner. That timeout is a functional allowance, not a performance target. Throughput is intentionally not benchmarked in GitHub-hosted CI.
 
@@ -50,7 +51,7 @@ The production provider applies Nomic's `search_query:` and `search_document:` p
 
 For both models, the raw request isolates llama.cpp/model compatibility while the live provider test closes the application-level path actually used by Hobbo.
 
-Changes under `packages/ai-provider/**`, `scripts/ci/**`, `models/**` or the model-smoke workflow itself trigger this workflow so provider regressions cannot bypass the real GGUF gate.
+Changes under `packages/ai-provider/**`, the dialogue runtime contract/live smoke, `scripts/ci/**`, `models/**` or the model-smoke workflow itself trigger this workflow so provider regressions cannot bypass the real GGUF gate.
 
 ## Cache invalidation
 
