@@ -10,30 +10,18 @@ ALTER TABLE commitments
   ADD COLUMN affinity_keys TEXT[] NOT NULL DEFAULT ARRAY[]::TEXT[];
 
 ALTER TABLE scheduled_events
-  ADD CONSTRAINT scheduled_events_affinity_keys_no_blank CHECK (
-    NOT EXISTS (
-      SELECT 1
-        FROM unnest(affinity_keys) AS affinity_key
-       WHERE length(btrim(affinity_key)) = 0
-    )
+  ADD CONSTRAINT scheduled_events_affinity_keys_no_empty CHECK (
+    array_position(affinity_keys, '') IS NULL
   );
 
 ALTER TABLE routines
-  ADD CONSTRAINT routines_affinity_keys_no_blank CHECK (
-    NOT EXISTS (
-      SELECT 1
-        FROM unnest(affinity_keys) AS affinity_key
-       WHERE length(btrim(affinity_key)) = 0
-    )
+  ADD CONSTRAINT routines_affinity_keys_no_empty CHECK (
+    array_position(affinity_keys, '') IS NULL
   );
 
 ALTER TABLE commitments
-  ADD CONSTRAINT commitments_affinity_keys_no_blank CHECK (
-    NOT EXISTS (
-      SELECT 1
-        FROM unnest(affinity_keys) AS affinity_key
-       WHERE length(btrim(affinity_key)) = 0
-    )
+  ADD CONSTRAINT commitments_affinity_keys_no_empty CHECK (
+    array_position(affinity_keys, '') IS NULL
   );
 
 CREATE INDEX scheduled_events_processing_affinity_idx
