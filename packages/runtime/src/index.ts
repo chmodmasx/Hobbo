@@ -758,6 +758,31 @@ function parseSocialOpportunity(
   };
 }
 
+function bootstrapSocialOpportunityEvent(
+  personId: PersonId,
+  occurrence: number,
+  dueAt: SimTime,
+  anchorDueAt: SimTime = dueAt,
+  suffix = "",
+): ScheduledEvent {
+  return {
+    id: asScheduledEventId(
+      `runtime:social:${personId}:opportunity-${occurrence}${suffix}`,
+    ),
+    dueAt,
+    type: SOCIAL_CONVERSATION_OPPORTUNITY_EVENT_TYPE,
+    payload: {
+      personId: String(personId),
+      occurrence,
+      anchorDueAt: anchorDueAt.toString(),
+    } satisfies SocialOpportunityPayload,
+    correlationId: asCorrelationId(
+      `runtime:social:${personId}:${occurrence}`,
+    ),
+    affinityKeys: [entityAffinityKey(String(personId))],
+  };
+}
+
 function socialOpportunityEvent(
   personId: PersonId,
   listenerId: EntityId,
@@ -887,8 +912,15 @@ export class DurableSocialRuntime {
         `Cannot schedule social opportunity for missing person ${personId}`,
       );
     }
-    const listenerId = await this.#pickListener(worldId, personId, 1);
-    const event = socialOpportunityEvent(personId, listenerId, 1, dueAt);
+    const listenerId = await this.#pickListenerIfAvailable(
+      worldId,
+      personId,
+      1,
+    );
+    const event =
+      listenerId === undefined
+        ? bootstrapSocialOpportunityEvent(personId, 1, dueAt)
+        : socialOpportunityEvent(personId, listenerId, 1, dueAt);
     await this.#schedules.schedule(worldId, event);
     return event;
   }
@@ -1118,22 +1150,36 @@ export class DurableSocialRuntime {
     );
   }
 
+  async #pickListenerIfAvailable(
+    worldId: WorldId,
+    speakerId: PersonId,
+    occurrence: number,
+  ): Promise<EntityId | undefined> {
+    const candidates = (await this.#people.listIds(worldId))
+      .filter((candidate) => candidate !== speakerId)
+      .map((candidate) => asEntityId(String(candidate)));
+    if (candidates.length === 0) return undefined;
+    const index =
+      stableHash(`${speakerId}:${occurrence}:listener`) % candidates.length;
+    return candidates[index]!;
+  }
+
   async #pickListener(
     worldId: WorldId,
     speakerId: PersonId,
     occurrence: number,
   ): Promise<EntityId> {
-    const candidates = (await this.#people.listIds(worldId))
-      .filter((candidate) => candidate !== speakerId)
-      .map((candidate) => asEntityId(String(candidate)));
-    if (candidates.length === 0) {
+    const listener = await this.#pickListenerIfAvailable(
+      worldId,
+      speakerId,
+      occurrence,
+    );
+    if (listener === undefined) {
       throw new DomainInvariantError(
         `Social actor ${speakerId} has no available listener`,
       );
     }
-    const index =
-      stableHash(`${speakerId}:${occurrence}:listener`) % candidates.length;
-    return candidates[index]!;
+    return listener;
   }
 
   async #pickClaim(
