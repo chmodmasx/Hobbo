@@ -1,20 +1,20 @@
 # Immediate next step
 
-Build the optional World Director as a bounded, non-authoritative orchestration layer.
+Build the first integrated neighborhood vertical slice and playtest gate.
 
-The city substrate now has durable rooms/buildings/streets, local active-area movement, hierarchical travel and capacity reservations. The next gate should prove that a director can propose higher-level world opportunities without bypassing normal simulation causality or directly editing person/world truth.
+The architecture sequence is now complete through the optional World Director. The next phase should stop adding foundational subsystems and prove that the existing simulation, city, realtime, rendering and cognition stack works together as one coherent playable experience.
 
-The World Director gate should:
+The first vertical-slice gate should:
 
-- observe bounded durable world summaries and recent causal events rather than raw mutable internals;
-- propose opportunities, pressures or scenario seeds through explicit typed contracts;
-- translate accepted proposals into ordinary scheduled events, commitments, affordances or other existing authoritative mechanisms;
-- never write person beliefs, memories, positions, balances, relationships or outcomes directly;
-- keep all resulting mutations inside the same PostgreSQL transactions, action validation and scheduler paths already used by autonomous agents and players;
-- make every director proposal and accepted/rejected result traceable and replayable;
-- support a deterministic mock/replay provider before any live model provider;
-- enforce hard budgets for cadence, affected entities and generated work so the director cannot become a hidden per-tick cognition loop;
-- prove that disabling the director leaves the base simulation fully functional and deterministic;
-- gate malformed proposals, unavailable affordances, duplicate/replayed proposals and restart recovery.
+- define one compact canonical neighborhood fixture using the existing room/building/street topology, active-area grids, housing, employment and social systems;
+- include one human-controlled resident plus autonomous residents that keep using the same authoritative action/runtime paths;
+- exercise a representative life loop through ordinary systems: move/travel, home, work, needs, social interaction, dialogue/memory and scheduled commitments;
+- keep PostgreSQL as the only durable authority and preserve restart/reconnect/idempotency guarantees throughout the slice;
+- render the neighborhood through the existing PixiJS/Sprite Forge path without introducing a second spatial or gameplay model in the client;
+- expose enough read-only/debug trace context to explain why important NPC actions and World Director opportunities occurred;
+- keep the World Director optional and disabled-by-default; enabling it may introduce bounded opportunities but may not be required for the base slice to function;
+- add a reproducible seed/setup path so the same neighborhood can be recreated locally and in CI without hand-editing database state;
+- add an end-to-end integration/playtest harness that proves the seeded neighborhood survives restart, player reconnect and continued simulation without divergent authoritative state;
+- measure any obvious realtime/runtime bottlenecks encountered by the integrated slice before introducing new infrastructure.
 
-Do not turn the director into a game master that overrides outcomes, teleports entities, invents balances or rewrites history. It may create opportunities; existing world rules decide what actually happens.
+Do not start broad content production, large maps, authentication/account systems, combat, character customization or a new simulation architecture in this gate. The goal is to turn the completed architecture into one small, coherent, inspectable playable neighborhood before expanding breadth.
