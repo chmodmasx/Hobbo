@@ -440,7 +440,9 @@ export class PostgresRoutineRepository {
       kind: input.kind,
       payload: input.payload,
       correlationId: input.correlationId,
-      affinityKeys: input.affinityKeys,
+      ...(input.affinityKeys === undefined
+        ? {}
+        : { affinityKeys: input.affinityKeys }),
     });
     return withTransaction(this.#pool, (client) =>
       insertCommitmentAndSchedule(client, input.worldId, commitment),
