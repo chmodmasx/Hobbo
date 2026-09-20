@@ -389,6 +389,51 @@ async function totalAttempts(connection: Pool, worldId: WorldId): Promise<bigint
   return BigInt(result.rows[0]?.attempts ?? "0");
 }
 
+function semanticSnapshot(snapshot: IntegratedSnapshot) {
+  return {
+    counts: snapshot.counts,
+    physiology: snapshot.physiology,
+    items: snapshot.items,
+    balances: snapshot.balances,
+    commitments: snapshot.commitments,
+    ledger: snapshot.ledger,
+    events: snapshot.events
+      .map(({ sequence: _sequence, ...event }) => event)
+      .sort((left, right) => left.id.localeCompare(right.id)),
+    pending: snapshot.pending
+      .map(({ ordinal: _ordinal, ...event }) => event)
+      .sort((left, right) => left.id.localeCompare(right.id)),
+  };
+}
+
+async function processWithTwoRuntimes(
+  worldId: WorldId,
+  through: ReturnType<typeof simTime>,
+): Promise<readonly [number, number]> {
+  const leftPool = new Pool();
+  const rightPool = new Pool();
+  try {
+    const left = new CoreWorldRuntime(leftPool);
+    const right = new CoreWorldRuntime(rightPool);
+    return await Promise.all([
+      left.processThrough({
+        worldId,
+        through,
+        workerId: "integrated-multi-left",
+        claimLimit: 1,
+      }),
+      right.processThrough({
+        worldId,
+        through,
+        workerId: "integrated-multi-right",
+        claimLimit: 1,
+      }),
+    ]);
+  } finally {
+    await Promise.all([leftPool.end(), rightPool.end()]);
+  }
+}
+
 function balance(snapshot: IntegratedSnapshot, accountId: string): bigint {
   const row = snapshot.balances.find((candidate) => candidate.id === accountId);
   if (row === undefined) throw new Error(`Missing account ${accountId}`);
@@ -437,6 +482,7 @@ describe("durable scheduled-event runtime", () => {
   it("keeps physiology, work, salary, rent and future scheduling restart-equivalent for 20 agents over 30 days", async () => {
     const controlWorld = await setupWorld(pool, "runtime-integrated-control");
     const controlRuntime = new CoreWorldRuntime(pool);
+    const multiWorld = await setupWorld(pool, "runtime-integrated-multi");
 
     const firstProcessPool = new Pool();
     const restartWorld = await setupWorld(
@@ -540,6 +586,14 @@ describe("durable scheduled-event runtime", () => {
       expect(await totalAttempts(restartedPool, restartWorld)).toBe(
         (await totalAttempts(pool, controlWorld)) + 1n,
       );
+
+      const multiCounts = await processWithTwoRuntimes(multiWorld, END_TIME);
+      expect(multiCounts[0] + multiCounts[1]).toBe(
+        controlFirst + controlSecond,
+      );
+      const multi = await snapshot(pool, multiWorld);
+      expect(semanticSnapshot(multi)).toEqual(semanticSnapshot(control));
+      expect(multiCounts.every((count) => count > 0)).toBe(true);
     } finally {
       await restartedPool.end();
     }
