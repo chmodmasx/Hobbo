@@ -21,7 +21,10 @@ import {
   type SpriteForgeFrame,
   type SpriteForgeManifest,
 } from "@hobbo/rendering";
-import { SPATIAL_MOVE_ACTION_ID } from "@hobbo/spatial";
+import {
+  SPATIAL_MOVE_ACTION_ID,
+  SPATIAL_TRAVEL_ACTION_ID,
+} from "@hobbo/spatial";
 import "./style.css";
 
 const MANIFEST_URL = "/sprite-forge/fixture_manifest.json";
@@ -45,6 +48,20 @@ interface ClientConfig {
   readonly personId: string;
   readonly roomId?: string;
   readonly endpoint: string;
+}
+
+interface TopologyRoom {
+  readonly id: string;
+  readonly label: string;
+}
+
+interface TopologyResponse {
+  readonly nodes: readonly {
+    readonly id: string;
+    readonly kind: string;
+    readonly label?: string;
+    readonly enabled?: boolean;
+  }[];
 }
 
 function requireElement<T extends HTMLElement>(
@@ -82,6 +99,51 @@ function clientConfig(): ClientConfig {
     ...(roomId === undefined ? {} : { roomId }),
     endpoint: endpoint.toString(),
   };
+}
+
+function apiUrl(config: ClientConfig, pathname: string): string {
+  const url = new URL(config.endpoint);
+  url.protocol = url.protocol === "wss:" ? "https:" : "http:";
+  url.pathname = pathname;
+  url.search = "";
+  url.hash = "";
+  return url.toString();
+}
+
+async function loadTopology(config: ClientConfig): Promise<readonly TopologyRoom[]> {
+  const response = await fetch(
+    apiUrl(config, `/api/worlds/${encodeURIComponent(config.worldId)}/topology`),
+    { cache: "no-store" },
+  );
+  if (!response.ok) {
+    throw new Error(
+      `Topology request failed: ${response.status} ${response.statusText}`,
+    );
+  }
+  const decoded = (await response.json()) as TopologyResponse;
+  if (!Array.isArray(decoded.nodes)) {
+    throw new Error("Topology response has no nodes array");
+  }
+  return decoded.nodes
+    .filter(
+      (node) =>
+        node.kind === "room" &&
+        node.enabled !== false &&
+        typeof node.id === "string" &&
+        node.id.trim().length > 0,
+    )
+    .map((node) => ({
+      id: node.id,
+      label:
+        typeof node.label === "string" && node.label.trim().length > 0
+          ? node.label
+          : node.id,
+    }))
+    .sort(
+      (left, right) =>
+        left.label.localeCompare(right.label) ||
+        left.id.localeCompare(right.id),
+    );
 }
 
 async function loadManifest(): Promise<SpriteForgeManifest> {
@@ -139,6 +201,10 @@ async function main(): Promise<void> {
   const personLabel = requireElement<HTMLElement>("#person-label");
   const roomLabel = requireElement<HTMLElement>("#room-label");
   const worldHost = requireElement<HTMLElement>("#world");
+  const travelDestination =
+    requireElement<HTMLSelectElement>("#travel-destination");
+  const travelButton =
+    requireElement<HTMLButtonElement>("#travel-button");
   const moveButtons = [
     ...document.querySelectorAll<HTMLButtonElement>("[data-dx][data-dy]"),
   ];
@@ -157,7 +223,10 @@ async function main(): Promise<void> {
   });
   worldHost.appendChild(app.canvas);
 
-  const manifest = await loadManifest();
+  const [manifest, topologyRooms] = await Promise.all([
+    loadManifest(),
+    loadTopology(config),
+  ]);
   const atlas = await Assets.load<Texture>(ASSET_ROOT + manifest.atlas.file);
   atlas.source.scaleMode = "nearest";
 
@@ -236,10 +305,45 @@ async function main(): Promise<void> {
   const pending = new Map<string, PlayerActionMessage>();
   let socket: WebSocket | undefined;
   let sessionReady = false;
+  let currentRoomId: string | undefined = config.roomId;
   let stopped = false;
+
+  function refreshDestinations(): void {
+    const previous = travelDestination.value;
+    travelDestination.replaceChildren();
+
+    const destinations = topologyRooms.filter(
+      (room) => room.id !== currentRoomId,
+    );
+    if (destinations.length === 0) {
+      const option = document.createElement("option");
+      option.value = "";
+      option.textContent = "No other rooms";
+      travelDestination.append(option);
+      travelDestination.disabled = true;
+      travelButton.disabled = true;
+      return;
+    }
+
+    for (const room of destinations) {
+      const option = document.createElement("option");
+      option.value = room.id;
+      option.textContent = room.label;
+      travelDestination.append(option);
+    }
+    if (destinations.some((room) => room.id === previous)) {
+      travelDestination.value = previous;
+    }
+    travelDestination.disabled = !sessionReady;
+    travelButton.disabled = !sessionReady;
+  }
 
   function setControls(enabled: boolean): void {
     for (const button of moveButtons) button.disabled = !enabled;
+    travelDestination.disabled = !enabled || topologyRooms.length < 2;
+    travelButton.disabled =
+      !enabled ||
+      topologyRooms.filter((room) => room.id !== currentRoomId).length === 0;
   }
 
   function flushPending(): void {
@@ -255,23 +359,37 @@ async function main(): Promise<void> {
     }
   }
 
-  function queueMove(dx: -1 | 0 | 1, dy: -1 | 0 | 1): void {
+  function queueAction(
+    actionId: string,
+    input: unknown,
+  ): string {
     const requestId = `${config.personId}:${crypto.randomUUID()}`;
     const message: PlayerActionMessage = {
       type: "player.action",
       requestId,
-      actionId: String(SPATIAL_MOVE_ACTION_ID),
-      input: { dx, dy },
+      actionId,
+      input,
     };
     pending.set(requestId, message);
     flushPending();
+    return requestId;
+  }
+
+  function queueMove(dx: -1 | 0 | 1, dy: -1 | 0 | 1): void {
+    queueAction(String(SPATIAL_MOVE_ACTION_ID), { dx, dy });
+  }
+
+  function queueTravel(destinationRoomId: string): void {
+    queueAction(String(SPATIAL_TRAVEL_ACTION_ID), { destinationRoomId });
   }
 
   function handleMessage(message: RealtimeServerMessage): void {
     switch (message.type) {
       case "session.ready":
         sessionReady = true;
+        currentRoomId = message.roomId;
         roomLabel.textContent = message.roomId;
+        refreshDestinations();
         setControls(true);
         flushPending();
         return;
@@ -339,6 +457,12 @@ async function main(): Promise<void> {
     });
   }
 
+  travelButton.addEventListener("click", () => {
+    const destinationRoomId = travelDestination.value;
+    if (destinationRoomId.length === 0) return;
+    queueTravel(destinationRoomId);
+  });
+
   for (const button of moveButtons) {
     button.addEventListener("click", () => {
       const dx = Number(button.dataset.dx);
@@ -380,6 +504,7 @@ async function main(): Promise<void> {
     socket?.close();
   });
 
+  refreshDestinations();
   setControls(false);
   connect();
 }

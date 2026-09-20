@@ -249,6 +249,34 @@ describe("authoritative city realtime binding", () => {
           }),
         ],
       });
+
+      client.socket.send(
+        JSON.stringify({
+          type: "player.action",
+          requestId: "realtime-trip",
+          actionId: "spatial.travel",
+          input: { destinationRoomId: "room-work" },
+        }),
+      );
+      expect(
+        await client.inbox.take(
+          (message) =>
+            message.type === "player.travel_planned" &&
+            message.requestId === "realtime-trip",
+        ),
+      ).toMatchObject({
+        type: "player.travel_planned",
+        travelId: "realtime-trip",
+        destinationRoomId: "room-work",
+        departAt: "0",
+        arriveAt: "60",
+        status: "arrived",
+      });
+      expect(await runtime.city.getTravel(worldId, "realtime-trip"))
+        .toMatchObject({
+          status: "arrived",
+          version: 2n,
+        });
     } finally {
       await close(client.socket);
       await new Promise<void>((resolve, reject) => {

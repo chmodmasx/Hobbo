@@ -80,6 +80,22 @@ body {
   line-height: 1.4;
 }
 
+.travel-control {
+  display: grid;
+  gap: 0.5rem;
+  padding-top: 0.75rem;
+  border-top: 1px solid #303845;
+}
+
+.travel-control select {
+  width: 100%;
+  border: 1px solid #4a5667;
+  border-radius: 0.35rem;
+  background: #202938;
+  color: inherit;
+  padding: 0.45rem;
+}
+
 .dpad {
   display: grid;
   grid-template-columns: repeat(3, 3rem);

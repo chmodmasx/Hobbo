@@ -751,8 +751,7 @@ export class PostgresCitySpatialRepository {
       if (existing !== undefined) {
         if (
           existing.person_id !== String(input.personId) ||
-          existing.destination_room_id !== input.destinationRoomId ||
-          simTime(existing.depart_at_sim) !== input.departAt
+          existing.destination_room_id !== input.destinationRoomId
         ) {
           throw new DomainInvariantError(
             `Travel id ${input.travelId} was reused with different semantics`,

@@ -36,6 +36,14 @@
             <button type="button" data-dx="1" data-dy="1" aria-label="South east">↘</button>
           </div>
           <small>Arrow keys / WASD also move cardinally.</small>
+          <div class="travel-control">
+            <strong>Travel</strong>
+            <select id="travel-destination" aria-label="Travel destination" disabled>
+              <option value="">No destinations loaded</option>
+            </select>
+            <button id="travel-button" type="button" disabled>Travel</button>
+            <small>Destinations come from the authoritative world topology.</small>
+          </div>
         </aside>
       </section>
     </main>
