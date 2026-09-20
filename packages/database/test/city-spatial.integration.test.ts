@@ -264,6 +264,30 @@ describe("durable hierarchical city spatial substrate", () => {
       .toEqual(["travel:home-to-work:depart"]);
   });
 
+  it("uses the locked authoritative world time for immediate travel", async () => {
+    const { worldId, aliceId } = await seedWorld("city-immediate-travel-world");
+    await worlds.advanceTime(worldId, simTime(15));
+
+    const travel = await city.planTravel({
+      worldId,
+      travelId: "immediate-trip",
+      personId: aliceId,
+      destinationRoomId: "room-work",
+    });
+
+    expect(travel).toMatchObject({
+      departAt: simTime(15),
+      arriveAt: simTime(75),
+      status: "planned",
+    });
+    expect((await schedules.loadPending(worldId)).map((entry) => ({
+      id: entry.event.id,
+      dueAt: entry.event.dueAt,
+    }))).toEqual([
+      { id: "travel:immediate-trip:depart", dueAt: simTime(15) },
+    ]);
+  });
+
   it("rejects a second active travel for the same person", async () => {
     const { worldId, aliceId } = await seedWorld("city-one-active-travel-world");
 

@@ -302,18 +302,11 @@ export function createHobboServer(options: HobboServerOptions): Server {
             "spatial.travel requires a non-empty destinationRoomId",
           );
         }
-        const world = await worlds.get(session.worldId);
-        if (world === undefined) {
-          throw new DomainInvariantError(
-            `World does not exist: ${session.worldId}`,
-          );
-        }
         const travel = await city.planTravel({
           worldId: session.worldId,
           travelId: message.requestId,
           personId: session.personId,
           destinationRoomId: message.input.destinationRoomId,
-          departAt: world.currentSimTime,
           origin: "player",
         });
         send(socket, {

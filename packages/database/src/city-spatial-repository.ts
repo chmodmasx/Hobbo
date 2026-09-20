@@ -204,7 +204,7 @@ export interface PlanTravelInput {
   readonly travelId: string;
   readonly personId: PersonId;
   readonly destinationRoomId: string;
-  readonly departAt: SimTime;
+  readonly departAt?: SimTime;
   readonly origin?: ActionOrigin;
 }
 
@@ -764,9 +764,10 @@ export class PostgresCitySpatialRepository {
         return mapTravel(existing);
       }
 
-      if (input.departAt < world.currentSimTime) {
+      const departAt = input.departAt ?? world.currentSimTime;
+      if (departAt < world.currentSimTime) {
         throw new DomainInvariantError(
-          `Travel departure ${input.departAt} cannot precede world time ${world.currentSimTime}`,
+          `Travel departure ${departAt} cannot precede world time ${world.currentSimTime}`,
         );
       }
 
@@ -888,7 +889,7 @@ export class PostgresCitySpatialRepository {
       }
 
       const arriveAt = simTime(
-        BigInt(input.departAt) + BigInt(route.totalTravelSeconds),
+        BigInt(departAt) + BigInt(route.totalTravelSeconds),
       );
       const inserted = await client.query<TravelRow>(
         `INSERT INTO spatial_travel_intents (
@@ -908,7 +909,7 @@ export class PostgresCitySpatialRepository {
           [...route.nodeIds],
           [...route.connectionIds],
           route.totalTravelSeconds,
-          input.departAt.toString(),
+          departAt.toString(),
           arriveAt.toString(),
         ],
       );
@@ -919,7 +920,7 @@ export class PostgresCitySpatialRepository {
 
       const departure: ScheduledEvent = {
         id: asScheduledEventId(`travel:${input.travelId}:depart`),
-        dueAt: input.departAt,
+        dueAt: departAt,
         type: SPATIAL_TRAVEL_DEPART_EVENT_TYPE,
         payload: {
           travelId: input.travelId,

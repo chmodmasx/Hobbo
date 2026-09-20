@@ -88,6 +88,54 @@ describe("hierarchical spatial topology", () => {
       });
   });
 
+  it("uses locale-independent code-unit ordering for route ties", () => {
+    const tiedNodes: readonly SpatialTopologyNode[] = [
+      { id: "start", kind: "room" },
+      { id: "z-node", kind: "street" },
+      { id: "umlaut-node", kind: "street" },
+      { id: "finish", kind: "room" },
+    ];
+    const tiedConnections: readonly SpatialTopologyConnection[] = [
+      {
+        id: "ä-first",
+        fromNodeId: "start",
+        toNodeId: "umlaut-node",
+        travelSeconds: 5,
+      },
+      {
+        id: "ä-last",
+        fromNodeId: "umlaut-node",
+        toNodeId: "finish",
+        travelSeconds: 5,
+      },
+      {
+        id: "z-first",
+        fromNodeId: "start",
+        toNodeId: "z-node",
+        travelSeconds: 5,
+      },
+      {
+        id: "z-last",
+        fromNodeId: "z-node",
+        toNodeId: "finish",
+        travelSeconds: 5,
+      },
+    ];
+
+    expect(
+      findShortestSpatialRoute(
+        tiedNodes,
+        tiedConnections,
+        "start",
+        "finish",
+      ),
+    ).toMatchObject({
+      nodeIds: ["start", "z-node", "finish"],
+      connectionIds: ["z-first", "z-last"],
+      totalTravelSeconds: 10,
+    });
+  });
+
   it("returns undefined when disabled edges make a destination unreachable", () => {
     expect(
       findShortestSpatialRoute(

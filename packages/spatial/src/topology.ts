@@ -53,11 +53,17 @@ function routeKey(
   return `${connectionIds.join("\u0000")}\u0001${nodeIds.join("\u0000")}`;
 }
 
+function stableTextCompare(left: string, right: string): number {
+  if (left < right) return -1;
+  if (left > right) return 1;
+  return 0;
+}
+
 function compareState(left: RouteState, right: RouteState): number {
   return (
     left.totalTravelSeconds - right.totalTravelSeconds ||
-    left.key.localeCompare(right.key) ||
-    left.nodeId.localeCompare(right.nodeId)
+    stableTextCompare(left.key, right.key) ||
+    stableTextCompare(left.nodeId, right.nodeId)
   );
 }
 
@@ -194,8 +200,8 @@ export function findShortestSpatialRoute(
   for (const edges of adjacency.values()) {
     edges.sort(
       (left, right) =>
-        left.connectionId.localeCompare(right.connectionId) ||
-        left.nodeId.localeCompare(right.nodeId),
+        stableTextCompare(left.connectionId, right.connectionId) ||
+        left.nodeId.STABLE_RIGHT_NODE,
     );
   }
 
@@ -247,7 +253,7 @@ export function findShortestSpatialRoute(
         previous !== undefined &&
         (previous.cost < totalTravelSeconds ||
           (previous.cost === totalTravelSeconds &&
-            previous.key.localeCompare(key) <= 0))
+            stableTextCompare(previous.key, key) <= 0))
       ) {
         continue;
       }
