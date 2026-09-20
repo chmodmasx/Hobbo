@@ -17,6 +17,7 @@ export interface TravelActionWorldState {
   readonly actor: SpatialActorState;
   readonly nodes: readonly SpatialTopologyNode[];
   readonly connections: readonly SpatialTopologyConnection[];
+  readonly activeTravelId?: string;
 }
 
 export function isTravelActionInput(
@@ -48,6 +49,13 @@ export function createTravelActionDefinition(): ActionDefinition<TravelActionWor
       }
 
       const current = context.worldState.actor;
+      if (context.worldState.activeTravelId !== undefined) {
+        return {
+          ok: false,
+          code: "active_travel_exists",
+          message: `Actor already has active travel ${context.worldState.activeTravelId}`,
+        };
+      }
       if (current.roomId.startsWith("__transit__:")) {
         return {
           ok: false,

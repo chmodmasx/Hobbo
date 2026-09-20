@@ -102,3 +102,24 @@ BEGIN
   END;
 END
 $$;
+
+DO $$
+BEGIN
+  BEGIN
+    INSERT INTO spatial_travel_intents (
+      world_id, id, person_id, origin_room_id, destination_room_id,
+      route_node_ids, route_connection_ids, total_travel_seconds,
+      depart_at_sim, arrive_at_sim
+    ) VALUES (
+      'city-spatial-sql-test', 'travel-duplicate-active', 'alice',
+      'room-home', 'room-work',
+      ARRAY['room-home','building-home','street-main','building-work','room-work'],
+      ARRAY['home-door','home-street','street-work','work-door'],
+      60, 20, 80
+    );
+    RAISE EXCEPTION 'second active travel unexpectedly accepted';
+  EXCEPTION
+    WHEN unique_violation THEN NULL;
+  END;
+END
+$$;

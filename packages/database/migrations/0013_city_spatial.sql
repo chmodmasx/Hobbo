@@ -156,6 +156,10 @@ CREATE TABLE spatial_travel_intents (
   )
 );
 
+CREATE UNIQUE INDEX spatial_travel_one_active_per_person_idx
+  ON spatial_travel_intents (world_id, person_id)
+  WHERE status IN ('planned','travelling');
+
 CREATE INDEX spatial_travel_person_status_idx
   ON spatial_travel_intents (world_id, person_id, status, depart_at_sim, id);
 

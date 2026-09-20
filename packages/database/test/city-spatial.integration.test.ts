@@ -264,6 +264,33 @@ describe("durable hierarchical city spatial substrate", () => {
       .toEqual(["travel:home-to-work:depart"]);
   });
 
+  it("rejects a second active travel for the same person", async () => {
+    const { worldId, aliceId } = await seedWorld("city-one-active-travel-world");
+
+    await city.planTravel({
+      worldId,
+      travelId: "trip-primary",
+      personId: aliceId,
+      destinationRoomId: "room-work",
+      departAt: simTime(10),
+    });
+
+    await expect(
+      city.planTravel({
+        worldId,
+        travelId: "trip-secondary",
+        personId: aliceId,
+        destinationRoomId: "room-work",
+        departAt: simTime(20),
+      }),
+    ).rejects.toThrow(/active_travel_exists/i);
+
+    expect(
+      (await schedules.loadPending(worldId)).map((entry) => entry.event.id),
+    ).toEqual(["travel:trip-primary:depart"]);
+    expect(await city.getTravel(worldId, "trip-secondary")).toBeUndefined();
+  });
+
   it("survives repository restart from departure through authoritative arrival", async () => {
     const { worldId, aliceId } = await seedWorld("city-travel-world");
     await city.planTravel({

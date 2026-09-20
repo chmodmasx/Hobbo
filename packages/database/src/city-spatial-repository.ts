@@ -124,6 +124,10 @@ interface SpatialStateRow extends QueryResultRow {
   version: string;
 }
 
+interface ActiveTravelRow extends QueryResultRow {
+  id: string;
+}
+
 interface ClaimedTravelRow extends QueryResultRow {
   due_at: string;
   type: string;
@@ -809,6 +813,18 @@ export class PostgresCitySpatialRepository {
       ]);
       const nodes = nodeRows.rows.map(mapNode);
       const connections = connectionRows.rows.map(mapConnection);
+      const activeTravel = await client.query<ActiveTravelRow>(
+        `SELECT id
+           FROM spatial_travel_intents
+          WHERE world_id = $1
+            AND person_id = $2
+            AND status IN ('planned','travelling')
+          ORDER BY id ASC
+          LIMIT 1
+          FOR UPDATE`,
+        [input.worldId, input.personId],
+      );
+
       const actionState: TravelActionWorldState = {
         actor: {
           personId: String(input.personId),
@@ -820,6 +836,9 @@ export class PostgresCitySpatialRepository {
         },
         nodes,
         connections,
+        ...(activeTravel.rows[0] === undefined
+          ? {}
+          : { activeTravelId: activeTravel.rows[0].id }),
       };
       const registry = new ActionRegistry<TravelActionWorldState>();
       registry.register(createTravelActionDefinition());
