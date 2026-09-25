@@ -1,0 +1,157 @@
+name: Integrated neighborhood browser playtest
+
+on:
+  workflow_dispatch:
+  push:
+    branches: [main]
+    paths:
+      - '.github/workflows/browser-playtest.yml'
+      - 'apps/client/**'
+      - 'apps/server/**'
+      - 'packages/database/**'
+      - 'packages/realtime/**'
+      - 'packages/rendering/**'
+      - 'packages/runtime/**'
+      - 'packages/spatial/**'
+      - 'tools/sprite-forge/**'
+      - 'assets/source/**'
+      - 'assets/definitions/**'
+      - 'scripts/ci/neighborhood-browser-playtest.mjs'
+  pull_request:
+    paths:
+      - '.github/workflows/browser-playtest.yml'
+      - 'apps/client/**'
+      - 'apps/server/**'
+      - 'packages/database/**'
+      - 'packages/realtime/**'
+      - 'packages/rendering/**'
+      - 'packages/runtime/**'
+      - 'packages/spatial/**'
+      - 'tools/sprite-forge/**'
+      - 'assets/source/**'
+      - 'assets/definitions/**'
+      - 'scripts/ci/neighborhood-browser-playtest.mjs'
+
+permissions:
+  contents: read
+
+concurrency:
+  group: neighborhood-browser-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  browser:
+    name: Chromium authoritative neighborhood playtest
+    runs-on: ubuntu-24.04
+    timeout-minutes: 20
+
+    services:
+      postgres:
+        image: postgres:17-alpine
+        env:
+          POSTGRES_USER: hobbo
+          POSTGRES_PASSWORD: hobbo
+          POSTGRES_DB: hobbo
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U hobbo -d hobbo"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 10
+
+    env:
+      PGHOST: 127.0.0.1
+      PGPORT: 5432
+      PGUSER: hobbo
+      PGPASSWORD: hobbo
+      PGDATABASE: hobbo
+      HOBBO_WORLD_ID: integrated-neighborhood-v1
+      HOBBO_PLAYER_ID: resident-alex
+      HOBBO_SERVER_URL: http://127.0.0.1:3000
+      HOBBO_CLIENT_URL: http://127.0.0.1:5173/?server=ws://127.0.0.1:3000/realtime
+      BROWSER_PLAYTEST_SCREENSHOT: .cache/browser/neighborhood-browser.png
+
+    steps:
+      - name: Checkout Hobbo
+        uses: actions/checkout@v4
+
+      - name: Install workspace, Blender and browser harness
+        run: |
+          npm install --global pnpm@10.15.1
+          sudo apt-get update
+          sudo apt-get install -y --no-install-recommends blender libegl1 postgresql-client curl
+          pnpm install --no-frozen-lockfile
+          mkdir -p .playwright .cache/browser
+          npm install --prefix .playwright --no-save --package-lock=false playwright@1.55.0
+          ./.playwright/node_modules/.bin/playwright install --with-deps chromium
+
+      - name: Apply database migrations
+        run: |
+          for migration in packages/database/migrations/*.sql; do
+            echo "Applying ${migration}"
+            psql -v ON_ERROR_STOP=1 -f "${migration}"
+          done
+
+      - name: Render and validate Sprite Forge browser fixture
+        run: |
+          mkdir -p .cache/sprite-forge/browser
+          blender --background --factory-startup \
+            --python tools/sprite-forge/blender/render_fixture.py -- \
+            --output-dir .cache/sprite-forge/browser
+          python3 tools/sprite-forge/fixtures/validate_fixture.py \
+            --output-dir .cache/sprite-forge/browser
+          rm -rf apps/client/public/sprite-forge
+          mkdir -p apps/client/public/sprite-forge
+          cp -a .cache/sprite-forge/browser/. apps/client/public/sprite-forge/
+
+      - name: Seed canonical neighborhood
+        run: pnpm --filter @hobbo/server seed:neighborhood
+
+      - name: Start authoritative server and Vite client
+        run: |
+          nohup env HOST=127.0.0.1 PORT=3000 \
+            pnpm --filter @hobbo/server start \
+            > .cache/browser/server.log 2>&1 &
+          echo $! > .cache/browser/server.pid
+
+          nohup pnpm --filter @hobbo/client dev -- \
+            --host 127.0.0.1 --port 5173 --strictPort \
+            > .cache/browser/client.log 2>&1 &
+          echo $! > .cache/browser/client.pid
+
+          for attempt in $(seq 1 60); do
+            if curl -fsS http://127.0.0.1:3000/health >/dev/null &&
+               curl -fsS http://127.0.0.1:5173/ >/dev/null; then
+              exit 0
+            fi
+            sleep 1
+          done
+
+          echo "Server log:"
+          cat .cache/browser/server.log
+          echo "Client log:"
+          cat .cache/browser/client.log
+          exit 1
+
+      - name: Run real Chromium neighborhood playtest
+        run: node scripts/ci/neighborhood-browser-playtest.mjs
+
+      - name: Stop browser fixture services
+        if: always()
+        run: |
+          for pidfile in .cache/browser/client.pid .cache/browser/server.pid; do
+            if test -f "${pidfile}"; then
+              kill "$(cat "${pidfile}")" 2>/dev/null || true
+            fi
+          done
+
+      - name: Upload browser diagnostics
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: integrated-neighborhood-browser-diagnostics
+          path: |
+            .cache/browser/*.log
+            .cache/browser/*.png
+          if-no-files-found: warn

@@ -330,6 +330,23 @@ async function main(): Promise<void> {
       renderedPeople.delete(personId);
     }
     resort();
+
+    worldHost.dataset.roomId = message.roomId;
+    worldHost.dataset.simTime = String(message.simTime);
+    worldHost.dataset.peopleCount = String(message.people.length);
+    worldHost.dataset.renderedPersonIds = [...renderedPeople.keys()]
+      .sort()
+      .join(",");
+    const playerState = message.people.find(
+      (person) => person.personId === config.personId,
+    );
+    if (playerState === undefined) {
+      delete worldHost.dataset.playerPosition;
+    } else {
+      worldHost.dataset.playerPosition =
+        `${playerState.x},${playerState.y},${playerState.z}`;
+    }
+
     status.textContent =
       `connected · sim ${message.simTime} · ${message.people.length} people · atlas ${manifest.atlas.width}×${manifest.atlas.height}`;
   }

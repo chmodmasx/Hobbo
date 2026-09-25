@@ -4,10 +4,11 @@
   "private": true,
   "type": "module",
   "scripts": {
-    "typecheck": "tsc -p tsconfig.json",
+    "advance:world": "tsx src/advance-world.ts",
+    "seed:neighborhood": "tsx src/seed-neighborhood.ts",
     "start": "tsx src/server.ts",
     "test:integration": "vitest run test/*.integration.test.ts --maxWorkers=1 --no-file-parallelism",
-    "seed:neighborhood": "tsx src/seed-neighborhood.ts"
+    "typecheck": "tsc -p tsconfig.json"
   },
   "dependencies": {
     "@hobbo/agents": "workspace:*",
