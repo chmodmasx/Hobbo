@@ -115,7 +115,7 @@ jobs:
             > .cache/browser/server.log 2>&1 &
           echo $! > .cache/browser/server.pid
 
-          nohup pnpm --filter @hobbo/client dev -- \
+          nohup pnpm --filter @hobbo/client exec vite \
             --host 127.0.0.1 --port 5173 --strictPort \
             > .cache/browser/client.log 2>&1 &
           echo $! > .cache/browser/client.pid
