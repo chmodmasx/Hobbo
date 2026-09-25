@@ -538,6 +538,22 @@ The deterministic/event-driven kernel is proven across body/inventory, work, mis
 - [x] Sprite Forge #16 artifact `10615557575` digest: `sha256:5783bd44bc83da84e4fbc46e9e165ca403e84ed307baf9258f6df87133f24841`.
 - [x] This checkpoint deliberately stops short of claiming browser-level playability: CI has validated the client build/renderer contract, but not yet a real automated browser connected to the seeded authoritative world.
 
+## Browser-validated integrated neighborhood vertical slice completed
+
+- [x] A dedicated `Integrated neighborhood browser playtest` workflow provisions PostgreSQL, applies the production migrations, renders/validates the Sprite Forge fixture, seeds the canonical neighborhood and launches the normal authoritative server plus Vite/PixiJS client.
+- [x] Playwright is installed only inside the CI browser harness environment; it is not added as a permanent workspace/runtime dependency.
+- [x] Client diagnostics expose only presentation/read-only reconciliation facts (`roomId`, sim time, people count, rendered person IDs and player logical position); they do not become world authority.
+- [x] Real headless Chromium loads the generated Sprite Forge manifest/atlas, initializes the 900×600 Pixi canvas and renders `resident-alex` from authoritative `room.state` in `room-flat-a`.
+- [x] Clicking the visible East control moves the player from logical `(2,2,0)` to `(3,2,0)`; the browser then confirms the same coordinates through the server's PostgreSQL-backed read-only spatial endpoint.
+- [x] Selecting Corner Cafe in the visible travel UI creates one authoritative `spatial.travel` intent; the generic `advance:world` CLI advances the ordinary `CoreWorldRuntime` rather than using a test-only mutation path.
+- [x] After authoritative arrival, browser reconciliation reconnects into `room-cafe` at logical `(20,0,0)`.
+- [x] A full browser reload binds directly to the persisted cafe room and the database still contains exactly one durable travel intent, proving reload does not duplicate travel.
+- [x] Browser Playtest CI #2 (`36136439764`) completed green on head `e787ae0622e65e5077f55abff30ae5902d3eb6a7`.
+- [x] Browser diagnostics artifact `10865416224` digest: `sha256:637b825767d0a4389b2b5a279523eb46cded3e0649cc60f13703c2a2bd38ad56`.
+- [x] Model smoke tests #50 (`36136439890`) completed green on the same head.
+- [x] Sprite Forge fixture CI #20 (`36136439801`) completed green on the same head, including deterministic asset validation, renderer contract and client build.
+- [x] Sprite Forge #20 artifact `10864701390` digest: `sha256:4fce213101bde8d2ae0a0a577dec120397916df7b781a2b22235f984c72cac88`.
+
 ## Next implementation milestones
 
 - [x] Memory storage/retrieval and Nomic embedding integration.
@@ -558,6 +574,7 @@ The deterministic/event-driven kernel is proven across body/inventory, work, mis
 - [x] Larger city systems.
 - [x] Optional World Director.
 - [x] Integrated neighborhood seed/restart checkpoint.
-- [ ] Browser-level integrated neighborhood playable validation.
+- [x] Browser-level integrated neighborhood playable validation.
+- [ ] Player-facing authoritative life actions.
 
-The architecture sequence through the optional non-authoritative World Director and the first canonical neighborhood seed/restart checkpoint are complete. The next planned phase is browser-level validation of that same neighborhood through the actual PixiJS client.
+The architecture sequence, canonical neighborhood seed/restart checkpoint and real browser-level integrated neighborhood validation are complete. The next planned phase is exposing the existing physiology/inventory life actions to the human player through the same authoritative action/runtime contracts.

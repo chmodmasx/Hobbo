@@ -1,20 +1,20 @@
 # Immediate next step
 
-Close the first integrated neighborhood vertical slice with a real browser-level playtest.
+Expose the first player-facing life actions through the authoritative realtime path.
 
-The canonical neighborhood seed, authoritative server path, restart-safe 12-hour simulation playtest and PixiJS client build are now in place. The remaining gap is to prove the actual browser client can connect to the seeded PostgreSQL world, render authoritative room state, send player actions and survive authoritative room transitions without a test-only client standing in for the browser.
+The integrated neighborhood is now validated end-to-end in a real Chromium browser: authoritative room rendering, local movement, hierarchical travel, runtime advancement, room reconciliation and reload persistence all use the production PostgreSQL/server/Vite/PixiJS path. The next gap is that a human player can navigate but cannot yet directly perform the life actions already implemented for the simulation.
 
-The browser-playtest gate should:
+The first player-life-action gate should:
 
-- launch the canonical `integrated-neighborhood-v1` seed through the documented production repository path;
-- start the normal authoritative server and the normal Vite/PixiJS client entrypoint;
-- use a real browser automation harness against the rendered client rather than substituting a raw WebSocket test client;
-- prove `resident-alex` initially renders in `room-flat-a` from authoritative `room.state`;
-- perform at least one local movement action through the visible client controls and confirm PostgreSQL remains authoritative;
-- plan travel to the Corner Cafe through the visible client UI, advance the authoritative runtime and verify the browser reconciles into `room-cafe`;
-- reconnect/reload the browser after travel and prove it binds to the persisted destination without duplicating the request;
-- verify the generated Sprite Forge atlas/manifest loads in the browser and that rendering still uses logical coordinates plus isometric projection only;
-- surface enough visible/debug state to make failed browser-playtest assertions diagnosable without exposing raw model prompts/responses;
-- keep this gate deterministic and CI-runnable with the same seed and PostgreSQL migrations used locally.
+- expose bounded read-only player physiology/inventory state needed by the UI, without turning the client into a state authority;
+- route `inventory.consume_food`, `physiology.begin_sleep` and `physiology.wake_up` through their existing shared `ActionDefinition` validation with origin `player`;
+- resolve action time from the authoritative world clock inside the mutation transaction; network requests must never advance simulation time;
+- persist each accepted player action atomically with the person/body mutation, causal domain event and any replacement physiology schedule it requires;
+- make exact `requestId` retries durable and idempotent across reconnect/restart, including proving food cannot be consumed twice;
+- reject semantic reuse of a request ID and reject unavailable/invalid actions without mutating person state;
+- keep NPC physiology on the existing scheduled-event path and prove player actions do not fork or disable autonomous behavior;
+- add compact browser controls/status for Eat and Sleep/Wake driven by authoritative state rather than optimistic local mutation;
+- extend the real Chromium neighborhood playtest to eat one owned food item, enter sleep, wake again and verify PostgreSQL plus the visible browser reconcile to the same result;
+- retain the existing movement/travel browser coverage in the same final gate.
 
-Do not add another simulation subsystem, large-map content, authentication, combat or broad production content in this gate. The goal is to close the gap between the already-green server/runtime playtest and the actual playable browser experience.
+Do not add a second physiology model, client-side hunger/energy simulation, broad inventory UX, crafting, new sleep-location rules or unrelated content in this slice. If bed/location requirements are added later, they must become shared world/action rules for player and NPC paths rather than browser-only restrictions.
