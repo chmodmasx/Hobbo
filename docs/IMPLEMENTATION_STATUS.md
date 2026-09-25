@@ -549,6 +549,7 @@ The deterministic/event-driven kernel is proven across body/inventory, work, mis
 - [x] After authoritative arrival, browser reconciliation reconnects into `room-cafe` at logical `(20,0,0)`.
 - [x] A full browser reload binds directly to the persisted cafe room and the database still contains exactly one durable travel intent, proving reload does not duplicate travel.
 - [x] Browser Playtest CI #2 (`36136439764`) completed green on head `e787ae0622e65e5077f55abff30ae5902d3eb6a7`.
+- [x] Core simulation CI #314 (`36136439767`) completed green on the same head, including typecheck/unit tests, PostgreSQL migrations/schema smoke, repository integration, realtime server integration and runtime integration.
 - [x] Browser diagnostics artifact `10865416224` digest: `sha256:637b825767d0a4389b2b5a279523eb46cded3e0649cc60f13703c2a2bd38ad56`.
 - [x] Model smoke tests #50 (`36136439890`) completed green on the same head.
 - [x] Sprite Forge fixture CI #20 (`36136439801`) completed green on the same head, including deterministic asset validation, renderer contract and client build.
